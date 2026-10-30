@@ -1,0 +1,19 @@
+﻿# Backend API
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic-settings
+
+# Static analysis
+ruff
+
+# Automated testing
+pytest
+httpx
+
+# Frontend and API communication
+streamlit
+requests
+
+# AI integration
+google-genai
