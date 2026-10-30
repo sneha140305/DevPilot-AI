@@ -3,8 +3,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes.health import router as health_router
 from app.core.config import settings
-from app.core.logging import setup_logging, logger
-
+from app.core.logging import logger, setup_logging
 
 # Initialize logging
 setup_logging()
