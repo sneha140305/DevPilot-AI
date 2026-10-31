@@ -21,6 +21,10 @@ class Settings(BaseSettings):
 
     MAX_FILES_PER_PROJECT: int = 100
 
+    MAX_EXTRACTED_SIZE_MB: int = 50
+
+    MAX_FILE_SIZE_MB: int = 5
+    
     ENABLE_AI_REVIEW: bool = False
 
     GEMINI_API_KEY: str | None = None
