@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.api.routes.health import router as health_router
+from app.api.routes.uploads import router as uploads_router
 from app.core.config import settings
 from app.core.logging import logger, setup_logging
 
@@ -23,6 +24,11 @@ app.include_router(
     tags=["Health"]
 )
 
+app.include_router(
+    uploads_router,
+    prefix="/api/v1",
+    tags=["Uploads"],
+)
 
 # Global exception handler
 @app.exception_handler(Exception)
