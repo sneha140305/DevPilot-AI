@@ -4,6 +4,10 @@ from pathlib import Path
 
 from app.core.config import settings
 from app.services import upload_service
+from app.services.ruff_analyzer import (
+    RuffAnalysisError,
+    analyze_with_ruff,
+)
 
 
 class AnalysisError(Exception):
@@ -250,7 +254,7 @@ def analyze_python_file(
 
 def analyze_project(upload_id: str):
     """
-    Analyze all Python files in an uploaded project.
+    Analyze all Python files using AST and Ruff.
     """
 
     python_files = discover_python_files(upload_id)
@@ -267,19 +271,50 @@ def analyze_project(upload_id: str):
 
     for file_path, relative_path in python_files:
 
+        # First: AST analysis
         result = analyze_python_file(
             file_path,
             relative_path,
         )
 
+        combined_issues = list(result["issues"])
+
+        # Second: Ruff analysis
+        # Skip Ruff if AST already detected invalid syntax.
+        if result["status"] == "parsed":
+
+            try:
+                ruff_issues = analyze_with_ruff(
+                    file_path,
+                    relative_path,
+                )
+
+                combined_issues.extend(ruff_issues)
+
+            except RuffAnalysisError as exc:
+                raise AnalysisError(
+                    503,
+                    "RUFF_ANALYSIS_FAILED",
+                    str(exc),
+                ) from exc
+
         file_results.append({
             "file_path": result["file_path"],
             "status": result["status"],
             "lines_of_code": result["lines_of_code"],
-            "issue_count": result["issue_count"],
+            "issue_count": len(combined_issues),
         })
 
-        all_issues.extend(result["issues"])
+        all_issues.extend(combined_issues)
+
+    severity_counts = {
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+    }
+
+    for issue in all_issues:
+        severity_counts[issue["severity"]] += 1
 
     return {
         "success": True,
@@ -287,6 +322,7 @@ def analyze_project(upload_id: str):
         "total_files": len(python_files),
         "analyzed_files": len(file_results),
         "total_issues": len(all_issues),
+        "severity_counts": severity_counts,
         "files": file_results,
         "issues": all_issues,
     }

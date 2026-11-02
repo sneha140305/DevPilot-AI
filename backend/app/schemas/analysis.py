@@ -26,5 +26,6 @@ class AnalysisResponse(BaseModel):
     total_files: int
     analyzed_files: int
     total_issues: int
+    severity_counts: dict[str, int]
     files: list[FileAnalysis]
     issues: list[AnalysisIssue]
