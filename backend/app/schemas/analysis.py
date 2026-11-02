@@ -5,7 +5,15 @@ from pydantic import BaseModel
 
 class AnalysisIssue(BaseModel):
     rule_id: str
+    rule_name: str
     severity: Literal["high", "medium", "low"]
+    category: Literal[
+        "security",
+        "correctness",
+        "maintainability",
+        "style",
+    ]
+    confidence: float
     message: str
     file_path: str
     line: int
@@ -27,5 +35,7 @@ class AnalysisResponse(BaseModel):
     analyzed_files: int
     total_issues: int
     severity_counts: dict[str, int]
+    category_counts: dict[str, int]
+    quality_score: int
     files: list[FileAnalysis]
     issues: list[AnalysisIssue]

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from app.core.config import settings
 from app.services import upload_service
+from app.services.issue_classifier import classify_issues
 from app.services.ruff_analyzer import (
     RuffAnalysisError,
     analyze_with_ruff,
@@ -254,7 +255,8 @@ def analyze_python_file(
 
 def analyze_project(upload_id: str):
     """
-    Analyze all Python files using AST and Ruff.
+    Analyze uploaded files using AST and Ruff,
+    then classify all findings.
     """
 
     python_files = discover_python_files(upload_id)
@@ -271,7 +273,6 @@ def analyze_project(upload_id: str):
 
     for file_path, relative_path in python_files:
 
-        # First: AST analysis
         result = analyze_python_file(
             file_path,
             relative_path,
@@ -279,8 +280,6 @@ def analyze_project(upload_id: str):
 
         combined_issues = list(result["issues"])
 
-        # Second: Ruff analysis
-        # Skip Ruff if AST already detected invalid syntax.
         if result["status"] == "parsed":
 
             try:
@@ -299,30 +298,36 @@ def analyze_project(upload_id: str):
                 ) from exc
 
         file_results.append({
-            "file_path": result["file_path"],
+            "file_path": relative_path,
             "status": result["status"],
             "lines_of_code": result["lines_of_code"],
-            "issue_count": len(combined_issues),
         })
 
         all_issues.extend(combined_issues)
 
-    severity_counts = {
-        "high": 0,
-        "medium": 0,
-        "low": 0,
-    }
+    # Centralized classification and deduplication.
+    classification = classify_issues(all_issues)
 
-    for issue in all_issues:
-        severity_counts[issue["severity"]] += 1
+    classified_issues = classification["issues"]
+
+    # Recalculate file-level issue counts after deduplication.
+    for file_result in file_results:
+
+        file_result["issue_count"] = sum(
+            1
+            for issue in classified_issues
+            if issue["file_path"] == file_result["file_path"]
+        )
 
     return {
         "success": True,
         "upload_id": upload_id,
         "total_files": len(python_files),
         "analyzed_files": len(file_results),
-        "total_issues": len(all_issues),
-        "severity_counts": severity_counts,
+        "total_issues": classification["total_issues"],
+        "severity_counts": classification["severity_counts"],
+        "category_counts": classification["category_counts"],
+        "quality_score": classification["quality_score"],
         "files": file_results,
-        "issues": all_issues,
+        "issues": classified_issues,
     }
