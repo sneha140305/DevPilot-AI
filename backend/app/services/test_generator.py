@@ -1,6 +1,9 @@
 import ast
+import re
 from pathlib import Path
 from typing import Any
+
+from app.services.upload_service import UPLOAD_ROOT
 
 
 def get_default_value(node: ast.expr) -> str:
@@ -238,4 +241,65 @@ def generate_test_code(
             "Generated basic callable checks. "
             "Behavioral assertions require additional specifications."
         ),
+    }
+
+def generate_tests_for_upload(
+    upload_id: str,
+    file_name: str,
+) -> dict[str, Any]:
+
+    if not re.fullmatch(r"[a-f0-9]{32}", upload_id):
+        raise ValueError("Invalid upload ID.")
+
+    if (
+        not file_name
+        or Path(file_name).name != file_name
+        or Path(file_name).suffix.lower() != ".py"
+    ):
+        raise ValueError("Invalid Python filename.")
+
+    upload_directory = (
+        UPLOAD_ROOT / upload_id
+    ).resolve()
+
+    upload_root = UPLOAD_ROOT.resolve()
+
+    if not upload_directory.is_relative_to(upload_root):
+        raise ValueError("Invalid upload path.")
+
+    if not upload_directory.is_dir():
+        raise FileNotFoundError("Upload not found.")
+
+    source_file = upload_directory / "source.py"
+
+    if not source_file.is_file():
+        project_directory = upload_directory / "project"
+
+        source_file = (
+            project_directory / file_name
+        ).resolve()
+
+        if not source_file.is_relative_to(project_directory.resolve()):
+            raise ValueError("Invalid project file path.")
+
+        if not source_file.is_file():
+            raise FileNotFoundError("Python file not found.")
+
+    metadata = discover_functions(source_file)
+
+    module_name = source_file.stem
+
+    generated = generate_test_code(
+        metadata,
+        module_name,
+    )
+
+    return {
+        "upload_id": upload_id,
+        "file_path": file_name,
+        "total_functions": metadata["total_functions"],
+        "total_tests": generated["total_tests"],
+        "success": generated["success"],
+        "test_code": generated["test_code"],
+        "message": generated.get("message", ""),
     }
