@@ -149,3 +149,93 @@ def discover_functions(file_path: Path) -> dict[str, Any]:
         source_code,
         file_path.name,
     )
+
+def generate_test_code(
+    metadata: dict[str, Any],
+    module_name: str,
+) -> dict[str, Any]:
+    """
+    Generate conservative pytest templates from discovered functions.
+
+    Generated tests are proposals. They are not executed here.
+    """
+
+    if not metadata.get("success"):
+        return {
+            "success": False,
+            "error": "Cannot generate tests for invalid Python code.",
+            "test_code": "",
+            "total_tests": 0,
+        }
+
+    if not module_name.isidentifier():
+        raise ValueError("Invalid Python module name.")
+
+    functions = metadata.get("functions", [])
+
+    if not functions:
+        return {
+            "success": True,
+            "test_code": "",
+            "total_tests": 0,
+            "message": "No functions were discovered.",
+        }
+
+    imports = []
+    test_functions = []
+
+    for function in functions:
+        if function["name"].startswith("_"):
+            continue
+
+        if "." in function["qualified_name"]:
+            # Class methods require class construction and
+            # instance setup, which this basic generator
+            # does not infer yet.
+            continue
+
+        if function["is_async"]:
+            # Async execution requires an appropriate test
+            # environment and event-loop configuration.
+            continue
+
+        name = function["name"]
+
+        imports.append(name)
+
+        test_name = f"test_{name}_exists"
+
+        test_functions.append(
+            f"def {test_name}():\n"
+            f"    assert callable({name})\n"
+        )
+
+    if not test_functions:
+        return {
+            "success": True,
+            "test_code": "",
+            "total_tests": 0,
+            "message": "No supported functions were discovered.",
+        }
+
+    unique_imports = sorted(set(imports))
+
+    import_statement = (
+        f"from {module_name} import "
+        + ", ".join(unique_imports)
+    )
+
+    test_code = (
+        f"{import_statement}\n\n\n"
+        + "\n".join(test_functions)
+    )
+
+    return {
+        "success": True,
+        "test_code": test_code,
+        "total_tests": len(test_functions),
+        "message": (
+            "Generated basic callable checks. "
+            "Behavioral assertions require additional specifications."
+        ),
+    }
