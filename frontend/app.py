@@ -492,8 +492,173 @@ elif page == "Code Analysis":
                 st.json(result)
 
 elif page == "AI Code Review":
+
     st.title("🤖 AI Code Review")
-    st.info("Code review interface is coming soon.")
+
+    st.write(
+        "Understand detected code issues, their impact, "
+        "and recommended fixes."
+    )
+
+    upload_id = st.session_state.get("upload_id")
+
+    if not upload_id:
+
+        st.warning(
+            "No project uploaded. Please upload a project first."
+        )
+
+    else:
+
+        st.success("Project ready for code review.")
+
+        st.write(
+            "**Project:**",
+            st.session_state.get("uploaded_file_name", "Unknown"),
+        )
+
+        if st.button(
+            "🚀 Review My Code",
+            use_container_width=True,
+        ):
+
+            with st.spinner("Reviewing your code..."):
+
+                try:
+
+                    response = requests.post(
+                        f"{API_URL}/api/v1/review/{upload_id}",
+                        timeout=60,
+                    )
+
+                    if response.status_code == 200:
+
+                        result = response.json()
+
+                        st.session_state["review_result"] = result
+
+                        st.success("Code review completed!")
+
+                    else:
+
+                        try:
+                            error = response.json()
+                        except ValueError:
+                            error = response.text
+
+                        st.error(f"Review failed: {error}")
+
+                except requests.RequestException as exc:
+
+                    st.error(
+                        f"Backend connection error: {exc}"
+                    )
+
+        result = st.session_state.get("review_result")
+
+        if result and result.get("upload_id") == upload_id:
+
+            st.divider()
+
+            st.subheader("📊 Review Summary")
+
+            reviews = result.get("reviews", [])
+
+            total_issues = result.get("total_issues", 0)
+
+            high_issues = sum(
+                1 for issue in reviews
+                if issue.get("severity", "").lower() == "high"
+            )
+
+            medium_issues = sum(
+                1 for issue in reviews
+                if issue.get("severity", "").lower() == "medium"
+            )
+
+            low_issues = sum(
+                1 for issue in reviews
+                if issue.get("severity", "").lower() == "low"
+            )
+
+            col1, col2, col3, col4 = st.columns(4)
+
+            col1.metric("Total Issues", total_issues)
+            col2.metric("High", high_issues)
+            col3.metric("Medium", medium_issues)
+            col4.metric("Low", low_issues)
+
+            st.caption(
+                f"Review provider: {result.get('review_provider', 'N/A')}"
+            )
+
+            st.divider()
+
+            st.subheader("🔎 Detailed Code Review")
+
+            if reviews:
+
+                for index, issue in enumerate(reviews, start=1):
+
+                    severity = issue.get("severity", "Unknown")
+
+                    with st.expander(
+                        f"{index}. {issue.get('rule_name', 'Code Issue')} "
+                        f"— {severity.upper()}"
+                    ):
+
+                        st.markdown(
+                            f"**Rule:** {issue.get('rule_id', 'N/A')}"
+                        )
+
+                        st.markdown(
+                            f"**Category:** {issue.get('category', 'N/A')}"
+                        )
+
+                        st.markdown(
+                            f"**File:** `{issue.get('file_path', 'N/A')}`"
+                        )
+
+                        st.markdown(
+                            f"**Line:** {issue.get('line', 'N/A')}"
+                        )
+
+                        st.markdown("### 📝 Description")
+
+                        st.write(issue.get("message", "N/A"))
+
+                        st.markdown("### 💡 Explanation")
+
+                        st.write(issue.get("explanation", "N/A"))
+
+                        st.markdown("### ⚠️ Potential Impact")
+
+                        st.write(issue.get("impact", "N/A"))
+
+                        st.markdown("### 🔧 Suggested Fix")
+
+                        st.info(
+                            issue.get("fix_suggestion", "No suggestion available.")
+                        )
+
+                        st.progress(
+                            float(issue.get("confidence", 0))
+                        )
+
+                        st.caption(
+                            f"Confidence: "
+                            f"{issue.get('confidence', 0) * 100:.1f}%"
+                        )
+
+            else:
+
+                st.success(
+                    "Excellent! No code issues were found."
+                )
+
+            with st.expander("View Complete API Response"):
+
+                st.json(result)
 
 elif page == "Test Generator":
     st.title("🧪 Automated Test Generator")
