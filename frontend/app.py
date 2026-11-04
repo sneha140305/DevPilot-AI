@@ -230,7 +230,6 @@ if page == "Dashboard":
     else:
         st.write("**Backend:** Offline")
 
-# ---------------- OTHER PAGES ----------------
 
 elif page == "Upload Project":
 
@@ -317,8 +316,180 @@ elif page == "Upload Project":
         )
 
 elif page == "Code Analysis":
+
     st.title("🔍 Code Analysis")
-    st.info("Static code analysis interface is coming soon.")
+
+    st.write(
+        "Analyze your uploaded Python project to detect "
+        "bugs, security risks, and code-quality issues."
+    )
+
+    upload_id = st.session_state.get("upload_id")
+
+    if not upload_id:
+        st.warning(
+            "No project uploaded yet. Please upload a Python "
+            "file or ZIP project first."
+        )
+
+    else:
+
+        st.success("Project is ready for analysis.")
+
+        st.write(
+            "**Uploaded file:**",
+            st.session_state.get("uploaded_file_name", "Unknown"),
+        )
+
+        st.code(upload_id)
+
+        st.divider()
+
+        if st.button(
+            "🚀 Analyze Code",
+            use_container_width=True,
+        ):
+
+            with st.spinner("Analyzing your project..."):
+
+                try:
+                    # Change post() to get() if your backend
+                    # analysis route uses @router.get().
+                    response = requests.post(
+                        f"{API_URL}/api/v1/analyze/{upload_id}",
+                        timeout=60,
+                    )
+
+                    if response.status_code == 200:
+
+                        result = response.json()
+
+                        st.session_state["analysis_result"] = result
+
+                        st.success("Code analysis completed!")
+
+                    else:
+                        try:
+                            error = response.json()
+                        except ValueError:
+                            error = response.text
+
+                        st.error(f"Analysis failed: {error}")
+
+                except requests.RequestException as exc:
+                    st.error(f"Backend connection error: {exc}")
+
+        # Display analysis results
+
+        result = st.session_state.get("analysis_result")
+
+        if result and result.get("upload_id") == upload_id:
+
+            st.divider()
+
+            st.subheader("📊 Analysis Results")
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.metric(
+                    "Total Issues",
+                    result.get("total_issues", 0),
+                )
+
+            with col2:
+                st.metric(
+                    "Quality Score",
+                    result.get("quality_score", "N/A"),
+                )
+
+            with col3:
+                st.metric(
+                    "Files Analyzed",
+                    result.get("total_files", "N/A"),
+                )
+
+            st.divider()
+
+            # Severity distribution
+
+            severity_counts = result.get("severity_counts", {})
+
+            st.subheader("Issue Severity")
+
+            if severity_counts:
+
+                severity_columns = st.columns(
+                    len(severity_counts)
+                )
+
+                for column, (severity, count) in zip(
+                    severity_columns,
+                    severity_counts.items(),
+                ):
+
+                    with column:
+                        st.metric(
+                            severity.replace("_", " ").title(),
+                            count,
+                        )
+
+            # Detected issues
+
+            issues = result.get("issues", [])
+
+            st.subheader("🐛 Detected Issues")
+
+            if issues:
+
+                for index, issue in enumerate(issues, start=1):
+
+                    title = (
+                        issue.get("message")
+                        or issue.get("rule_id")
+                        or f"Issue {index}"
+                    )
+
+                    with st.expander(
+                        f"{index}. {title}"
+                    ):
+
+                        st.write(
+                            "**Rule:**",
+                            issue.get("rule_id", "N/A"),
+                        )
+
+                        st.write(
+                            "**Severity:**",
+                            issue.get("severity", "N/A"),
+                        )
+
+                        st.write(
+                            "**File:**",
+                            issue.get("file_path", "N/A"),
+                        )
+
+                        st.write(
+                            "**Line:**",
+                            issue.get("line", "N/A"),
+                        )
+
+                        st.write(
+                            "**Category:**",
+                            issue.get("category", "N/A"),
+                        )
+
+                        st.write(
+                            "**Description:**",
+                            issue.get("message", "No description"),
+                        )
+
+            else:
+                st.success("No issues detected!")
+
+            with st.expander("View complete API response"):
+
+                st.json(result)
 
 elif page == "AI Code Review":
     st.title("🤖 AI Code Review")
