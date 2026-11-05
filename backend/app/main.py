@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -7,15 +9,27 @@ from app.api.routes.health import router as health_router
 from app.api.routes.uploads import router as uploads_router
 from app.core.config import settings
 from app.core.logging import logger, setup_logging
+from app.db.database import initialize_database
 
 # Initialize logging
 setup_logging()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Initialize application resources during startup.
+    """
+
+    initialize_database()
+
+    yield
 
 # Initialize FastAPI
 app = FastAPI(
     title=settings.APP_NAME,
     description="AI-powered code analysis, debugging and testing assistant.",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 
