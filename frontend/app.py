@@ -1,5 +1,7 @@
 import requests
 import streamlit as st
+import json
+from datetime import datetime, timezone
 
 # ---------------- PAGE CONFIGURATION ----------------
 
@@ -835,5 +837,212 @@ elif page == "Test Generator":
                 st.json(result)
 
 elif page == "Reports":
-    st.title("📊 Reports")
-    st.info("Analysis reports will be available here.")
+
+    st.title("📊 Project Reports")
+
+    st.write(
+        "View your project's code analysis, code review, "
+        "and automated test generation results."
+    )
+
+    upload_id = st.session_state.get("upload_id")
+
+    if not upload_id:
+
+        st.warning(
+            "No project uploaded. Upload a project to view reports."
+        )
+
+    else:
+
+        project_name = st.session_state.get(
+            "uploaded_file_name",
+            "Unknown Project",
+        )
+
+        st.subheader("Project Information")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.write(f"**Project:** {project_name}")
+
+        with col2:
+            st.write(f"**Upload ID:** `{upload_id}`")
+
+        # Retrieve results belonging to the current upload
+
+        analysis = st.session_state.get("analysis_result", {})
+        review = st.session_state.get("review_result", {})
+        test_generation = st.session_state.get(
+            "test_generation_result", {}
+        )
+
+        if analysis.get("upload_id") != upload_id:
+            analysis = {}
+
+        if review.get("upload_id") != upload_id:
+            review = {}
+
+        if test_generation.get("upload_id") != upload_id:
+            test_generation = {}
+
+        st.divider()
+
+        # Summary metrics
+
+        analysis_available = bool(analysis)
+        review_available = bool(review)
+        tests_available = bool(test_generation)
+
+        review_count = review.get("total_issues", 0)
+
+        generated_tests = test_generation.get("total_tests", 0)
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric(
+                "Code Analysis",
+                "Completed" if analysis_available else "Pending",
+            )
+
+        with col2:
+            st.metric(
+                "Issues Reviewed",
+                review_count if review_available else "Pending",
+            )
+
+        with col3:
+            st.metric(
+                "Tests Generated",
+                generated_tests if tests_available else "Pending",
+            )
+
+        st.divider()
+
+        # Analysis section
+
+        st.subheader("🔍 Static Code Analysis")
+
+        if analysis_available:
+
+            st.success("Analysis results available.")
+
+            st.json(analysis)
+
+        else:
+
+            st.info("Run Code Analysis to generate this report.")
+
+        st.divider()
+
+        # Review section
+
+        st.subheader("🤖 Code Review")
+
+        if review_available:
+
+            st.success("Code review results available.")
+
+            reviews = review.get("reviews", [])
+
+            severity_counts = {}
+
+            for issue in reviews:
+
+                severity = issue.get(
+                    "severity",
+                    "Unknown",
+                ).capitalize()
+
+                severity_counts[severity] = (
+                    severity_counts.get(severity, 0) + 1
+                )
+
+            if severity_counts:
+
+                st.write("**Severity Distribution**")
+
+                st.bar_chart(severity_counts)
+
+            for index, issue in enumerate(reviews, start=1):
+
+                with st.expander(
+                    f"{index}. {issue.get('rule_name', 'Code Issue')}"
+                ):
+
+                    st.write("**Description:**", issue.get("message"))
+                    st.write("**Explanation:**", issue.get("explanation"))
+                    st.write("**Impact:**", issue.get("impact"))
+                    st.info(issue.get("fix_suggestion"))
+
+        else:
+
+            st.info("Run AI Code Review to generate this report.")
+
+        st.divider()
+
+        # Test generation section
+
+        st.subheader("🧪 Automated Test Generation")
+
+        if tests_available:
+
+            st.success("Test generation results available.")
+
+            st.metric(
+                "Functions Discovered",
+                test_generation.get("total_functions", 0),
+            )
+
+            st.metric(
+                "Tests Generated",
+                generated_tests,
+            )
+
+            st.code(
+                test_generation.get("test_code", ""),
+                language="python",
+            )
+
+        else:
+
+            st.info(
+                "Generate pytest code to include it in this report."
+            )
+
+        st.divider()
+
+        # Export consolidated report
+
+        st.subheader("📥 Export Project Report")
+
+        report = {
+            "project_name": project_name,
+            "upload_id": upload_id,
+            "generated_at": datetime.now(
+                timezone.utc
+            ).isoformat(),
+            "analysis": analysis,
+            "code_review": review,
+            "test_generation": test_generation,
+        }
+
+        report_json = json.dumps(
+            report,
+            indent=4,
+            ensure_ascii=False,
+        )
+
+        st.download_button(
+            label="⬇️ Download Complete Project Report",
+            data=report_json,
+            file_name="devpilot_project_report.json",
+            mime="application/json",
+            use_container_width=True,
+        )
+
+        st.success(
+            "Your consolidated project report is ready."
+        )
