@@ -661,8 +661,178 @@ elif page == "AI Code Review":
                 st.json(result)
 
 elif page == "Test Generator":
+
     st.title("🧪 Automated Test Generator")
-    st.info("Test generation interface is coming soon.")
+
+    st.write(
+        "Automatically discover Python functions and generate "
+        "pytest test cases for your uploaded code."
+    )
+
+    st.divider()
+
+    upload_id = st.session_state.get("upload_id")
+    uploaded_file_name = st.session_state.get(
+        "uploaded_file_name",
+        "",
+    )
+
+    if not upload_id:
+
+        st.warning(
+            "No project uploaded. Please upload a Python file first."
+        )
+
+    else:
+
+        st.success("Project is ready for test generation.")
+
+        st.write(f"**Uploaded project:** {uploaded_file_name}")
+
+        st.code(upload_id)
+
+        # Select Python file
+
+        if uploaded_file_name.lower().endswith(".py"):
+
+            file_name = uploaded_file_name
+
+        else:
+
+            st.info(
+                "For ZIP projects, enter the relative path of "
+                "the Python file you want to process."
+            )
+
+            file_name = st.text_input(
+                "Python file path",
+                placeholder="example.py or src/calculator.py",
+            )
+
+        st.divider()
+
+        if st.button(
+            "🚀 Generate Pytest Code",
+            use_container_width=True,
+        ):
+
+            if not file_name:
+
+                st.warning("Please provide a Python filename.")
+
+            elif not file_name.lower().endswith(".py"):
+
+                st.error("Only Python files are supported.")
+
+            else:
+
+                with st.spinner("Discovering functions and generating tests..."):
+
+                    try:
+
+                        response = requests.post(
+                            f"{API_URL}/api/v1/generate-tests/"
+                            f"{upload_id}/{file_name}",
+                            timeout=60,
+                        )
+
+                        if response.status_code == 200:
+
+                            result = response.json()
+
+                            st.session_state["test_generation_result"] = (
+                                result
+                            )
+
+                            st.success(
+                                "Test generation completed!"
+                            )
+
+                        else:
+
+                            try:
+                                error = response.json()
+                            except ValueError:
+                                error = response.text
+
+                            st.error(
+                                f"Test generation failed: {error}"
+                            )
+
+                    except requests.RequestException as exc:
+
+                        st.error(
+                            f"Backend connection error: {exc}"
+                        )
+
+        # Display generated tests
+
+        result = st.session_state.get(
+            "test_generation_result"
+        )
+
+        if (
+            result
+            and result.get("upload_id") == upload_id
+            and result.get("file_path") == file_name
+        ):
+
+            st.divider()
+
+            st.subheader("📊 Generation Summary")
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.metric(
+                    "Functions Discovered",
+                    result.get("total_functions", 0),
+                )
+
+            with col2:
+                st.metric(
+                    "Tests Generated",
+                    result.get("total_tests", 0),
+                )
+
+            with col3:
+                st.metric(
+                    "Generation Status",
+                    "Success" if result.get("success") else "Failed",
+                )
+
+            st.info(result.get("message", ""))
+
+            test_code = result.get("test_code", "")
+
+            if test_code:
+
+                st.subheader("Generated Pytest Code")
+
+                st.code(
+                    test_code,
+                    language="python",
+                )
+
+                st.download_button(
+                    label="⬇️ Download Generated Tests",
+                    data=test_code,
+                    file_name="test_generated.py",
+                    mime="text/x-python",
+                    use_container_width=True,
+                )
+
+            else:
+
+                st.warning(
+                    "No test code was generated. "
+                    "Check whether the uploaded file contains "
+                    "supported Python functions."
+                )
+
+            with st.expander("View Complete API Response"):
+
+                st.json(result)
 
 elif page == "Reports":
     st.title("📊 Reports")
