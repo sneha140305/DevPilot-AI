@@ -1,5 +1,8 @@
 import pytest
+from app.db.database import initialize_database
 from app.main import app
+from app.repositories import analysis_repository
+from app.repositories.project_repository import create_project
 from app.services import upload_service
 from fastapi.testclient import TestClient
 
@@ -13,10 +16,24 @@ def client(tmp_path, monkeypatch):
         tmp_path,
     )
 
+    test_db = tmp_path / "test_devpilot.db"
+
+    monkeypatch.setattr(
+        analysis_repository,
+        "DATABASE_PATH",
+        test_db,
+    )
+
+    initialize_database(test_db)
+
     return TestClient(app)
 
 
-def create_uploaded_project(tmp_path, upload_id, files):
+def create_uploaded_project(
+    tmp_path,
+    upload_id,
+    files,
+):
 
     project_directory = (
         tmp_path / upload_id / "project"
@@ -39,6 +56,14 @@ def create_uploaded_project(tmp_path, upload_id, files):
             content,
             encoding="utf-8",
         )
+
+    # Register the project in SQLite.
+    create_project(
+        upload_id=upload_id,
+        original_filename="test_project.zip",
+        upload_type="zip",
+        db_path=analysis_repository.DATABASE_PATH,
+    )
 
 
 def test_analyze_clean_python_file(client, tmp_path):

@@ -1,30 +1,45 @@
 import pytest
+from app.db.database import initialize_database
 from app.main import app
+from app.repositories import analysis_repository
+from app.repositories.project_repository import (
+    create_project as register_project,
+)
 from app.services import upload_service
 from fastapi.testclient import TestClient
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-
+    # Use a temporary upload directory.
     monkeypatch.setattr(
         upload_service,
         "UPLOAD_ROOT",
         tmp_path,
     )
 
+    # Create an isolated database for each test.
+    test_db = tmp_path / "test_devpilot.db"
+
+    monkeypatch.setattr(
+        analysis_repository,
+        "DATABASE_PATH",
+        test_db,
+    )
+
+    # Initialize the database schema.
+    initialize_database(test_db)
+
     return TestClient(app)
 
 
 def create_project(tmp_path, upload_id, source_code):
-
+    # Create the uploaded project structure.
     project_directory = (
         tmp_path / upload_id / "project"
     )
 
-    project_directory.mkdir(
-        parents=True,
-    )
+    project_directory.mkdir(parents=True)
 
     source_file = project_directory / "main.py"
 
@@ -33,9 +48,17 @@ def create_project(tmp_path, upload_id, source_code):
         encoding="utf-8",
     )
 
+    # Register the project in the SAME database
+    # used by the analysis repository.
+    register_project(
+        upload_id=upload_id,
+        original_filename="test_project.zip",
+        upload_type="zip",
+        db_path=analysis_repository.DATABASE_PATH,
+    )
+
 
 def test_detect_unused_import(client, tmp_path):
-
     upload_id = "a" * 32
 
     create_project(
@@ -64,7 +87,6 @@ def calculate():
 
 
 def test_detect_undefined_name(client, tmp_path):
-
     upload_id = "b" * 32
 
     create_project(
@@ -91,7 +113,6 @@ def calculate():
 
 
 def test_detect_unused_variable(client, tmp_path):
-
     upload_id = "c" * 32
 
     create_project(
@@ -119,7 +140,6 @@ def calculate():
 
 
 def test_detect_long_line(client, tmp_path):
-
     upload_id = "d" * 32
 
     create_project(
@@ -143,7 +163,6 @@ def test_detect_long_line(client, tmp_path):
 
 
 def test_analysis_contains_severity_counts(client, tmp_path):
-
     upload_id = "e" * 32
 
     create_project(
