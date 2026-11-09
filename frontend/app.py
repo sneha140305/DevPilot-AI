@@ -87,6 +87,29 @@ def check_backend():
 
 backend_online, health_data = check_backend()
 
+def get_api_data(endpoint):
+    """
+    Fetch data from the FastAPI backend.
+    Returns (data, error).
+    """
+    try:
+        response = requests.get(
+            f"{API_URL}{endpoint}",
+            timeout=15,
+        )
+
+        if response.status_code == 200:
+            return response.json(), None
+
+        try:
+            error = response.json()
+        except ValueError:
+            error = response.text
+
+        return None, error
+
+    except requests.RequestException as exc:
+        return None, str(exc)
 
 # ---------------- SIDEBAR ----------------
 
@@ -102,6 +125,7 @@ with st.sidebar:
         [
             "Dashboard",
             "Upload Project",
+            "Project History",
             "Code Analysis",
             "AI Code Review",
             "Test Generator",
@@ -146,56 +170,110 @@ if page == "Dashboard":
 
     st.write("")
 
-    # Metrics
+        # Live Dashboard Metrics
 
-    col1, col2, col3, col4 = st.columns(4)
+    st.subheader("📊 Project Overview")
 
-    with col1:
-        st.markdown(
-            """
-            <div class="metric-card">
-                <div class="metric-label">Projects Analyzed</div>
-                <div class="metric-value">0</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+    metrics = {}
+    metrics_available = False
+
+    if backend_online:
+        try:
+            response = requests.get(
+                f"{API_URL}/api/v1/dashboard/summary",
+                timeout=5,
+            )
+
+            response.raise_for_status()
+
+            dashboard_data = response.json()
+
+            metrics = dashboard_data.get(
+                "summary",
+                dashboard_data,
+            )
+
+            metrics_available = True
+
+        except (requests.RequestException, ValueError) as exc:
+            st.warning(
+                f"Unable to load dashboard metrics: {exc}"
+            )
+    else:
+        st.warning(
+            "Start the backend to view live dashboard metrics."
         )
 
-    with col2:
-        st.markdown(
-            """
-            <div class="metric-card">
-                <div class="metric-label">Issues Detected</div>
-                <div class="metric-value">0</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    if metrics_available:
 
-    with col3:
-        st.markdown(
-            """
-            <div class="metric-card">
-                <div class="metric-label">Tests Generated</div>
-                <div class="metric-value">0</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        col1, col2, col3, col4 = st.columns(4)
 
-    with col4:
-        st.markdown(
-            """
-            <div class="metric-card">
-                <div class="metric-label">Code Reviews</div>
-                <div class="metric-value">0</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        with col1:
+            st.markdown(
+                f"""
+                <div class="metric-card">
+                    <div class="metric-label">Projects Analyzed</div>
+                    <div class="metric-value">
+                        {metrics.get("projects_analyzed", 0)}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-    st.write("")
-    st.divider()
+        with col2:
+            st.markdown(
+                f"""
+                <div class="metric-card">
+                    <div class="metric-label">Issues Detected</div>
+                    <div class="metric-value">
+                        {metrics.get("total_issues", 0)}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with col3:
+            st.markdown(
+                f"""
+                <div class="metric-card">
+                    <div class="metric-label">Tests Generated</div>
+                    <div class="metric-value">
+                        {metrics.get("total_tests_generated", 0)}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with col4:
+            st.markdown(
+                f"""
+                <div class="metric-card">
+                    <div class="metric-label">Code Reviews</div>
+                    <div class="metric-value">
+                        {metrics.get("total_code_reviews", 0)}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    else:
+        col1, col2, col3, col4 = st.columns(4)
+
+        for col, label in zip(
+            [col1, col2, col3, col4],
+            [
+                "Projects Analyzed",
+                "Issues Detected",
+                "Tests Generated",
+                "Code Reviews",
+            ],
+        ):
+            with col:
+                st.metric(label, "N/A")
 
     # Quick actions
 
@@ -835,6 +913,233 @@ elif page == "Test Generator":
             with st.expander("View Complete API Response"):
 
                 st.json(result)
+
+
+elif page == "Project History":
+
+    st.title("📂 Project History")
+
+    st.write(
+        "Explore your previously uploaded projects "
+        "and access their saved analysis, review, "
+        "and test generation results."
+    )
+
+    st.divider()
+
+    # Fetch all uploaded projects
+
+    with st.spinner("Loading project history..."):
+
+        projects_data, error = get_api_data(
+            "/api/v1/projects/"
+        )
+
+    if error:
+
+        st.error(
+            f"Unable to load projects: {error}"
+        )
+
+    else:
+
+        projects = projects_data.get("projects", [])
+
+        total_projects = len(projects)
+
+        st.metric(
+            "Total Uploaded Projects",
+            total_projects,
+        )
+
+        st.divider()
+
+        if not projects:
+
+            st.info(
+                "No projects found. Upload your first "
+                "Python project to get started."
+            )
+
+        else:
+
+            st.subheader("📁 Uploaded Projects")
+
+            # Display project information
+
+            display_projects = [
+                {
+                    "Project Name": project.get(
+                        "original_filename"
+                    ),
+                    "Type": project.get("upload_type"),
+                    "Uploaded At": project.get("created_at"),
+                    "Upload ID": project.get("upload_id"),
+                }
+                for project in projects
+            ]
+
+            st.dataframe(
+                display_projects,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            st.divider()
+
+            # Select a project
+
+            st.subheader("🔍 Explore Project")
+
+            project_options = {
+                (
+                    f"{project.get('original_filename')} "
+                    f"({project.get('upload_id', '')[:8]})"
+                ): project.get("upload_id")
+                for project in projects
+            }
+
+            selected_project_name = st.selectbox(
+                "Select a project",
+                list(project_options.keys()),
+            )
+
+            selected_upload_id = project_options[
+                selected_project_name
+            ]
+
+            # Fetch selected project details
+
+            project_data, project_error = get_api_data(
+                f"/api/v1/projects/{selected_upload_id}"
+            )
+
+            if project_error:
+
+                st.error(
+                    f"Unable to retrieve project details: "
+                    f"{project_error}"
+                )
+
+            else:
+
+                project = project_data.get("project", {})
+
+                st.success("Project details loaded successfully.")
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+
+                    st.write(
+                        "**Filename:**",
+                        project.get("original_filename"),
+                    )
+
+                    st.write(
+                        "**Upload Type:**",
+                        project.get("upload_type"),
+                    )
+
+                with col2:
+
+                    st.write(
+                        "**Uploaded At:**",
+                        project.get("created_at"),
+                    )
+
+                    st.write(
+                        "**Upload ID:**",
+                        selected_upload_id,
+                    )
+
+                st.divider()
+
+                # Retrieve saved history
+
+                st.subheader("📊 Saved Project Results")
+
+                history_endpoints = [
+                    (
+                        "🔍 Code Analysis",
+                        f"/api/v1/analysis/"
+                        f"{selected_upload_id}/history",
+                        "analyses",
+                    ),
+                    (
+                        "🤖 Code Review",
+                        f"/api/v1/review/"
+                        f"{selected_upload_id}/history",
+                        "reviews",
+                    ),
+                    (
+                        "🧪 Test Generation",
+                        f"/api/v1/generate-tests/"
+                        f"{selected_upload_id}/history",
+                        "history",
+                    ),
+                ]
+
+                for title, endpoint, result_key in history_endpoints:
+
+                    with st.expander(title, expanded=True):
+
+                        history_data, history_error = get_api_data(
+                            endpoint
+                        )
+
+                        if history_error:
+
+                            st.error(
+                                f"Unable to load history: "
+                                f"{history_error}"
+                            )
+
+                        else:
+
+                            history = history_data.get(
+                                result_key,
+                                [],
+                            )
+
+                            if not history:
+
+                                st.info(
+                                    "No saved results available yet."
+                                )
+
+                            else:
+
+                                st.success(
+                                    f"{len(history)} saved record(s) found."
+                                )
+
+                                for index, record in enumerate(
+                                    history,
+                                    start=1,
+                                ):
+
+                                    result = record.get(
+                                        "result",
+                                        record,
+                                    )
+
+                                    created_at = record.get(
+                                        "created_at",
+                                        "Unknown date",
+                                    )
+
+                                    with st.expander(
+                                        f"Record {index} — {created_at}"
+                                    ):
+
+                                        st.json(result)
+
+                st.divider()
+
+                st.caption(
+                    "DevPilot AI | Persistent Project History"
+                )
 
 elif page == "Reports":
 
