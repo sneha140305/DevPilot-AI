@@ -1,7 +1,9 @@
-import requests
-import streamlit as st
+import hashlib
 import json
 from datetime import datetime, timezone
+
+import requests
+import streamlit as st
 
 # ---------------- PAGE CONFIGURATION ----------------
 
@@ -128,6 +130,8 @@ with st.sidebar:
             "Project History",
             "Code Analysis",
             "AI Code Review",
+            "Proposed Fixes",
+            "Accepted Fix History",
             "Test Generator",
             "Reports",
         ],
@@ -354,7 +358,11 @@ elif page == "Upload Project":
                         result = response.json()
 
                         st.session_state["upload_id"] = result["upload_id"]
-
+                        st.session_state.pop("analysis_result", None)
+                        st.session_state.pop("review_result", None)
+                        st.session_state.pop("test_generation_result", None)
+                        st.session_state.pop("fix_result", None)
+                        st.session_state.pop("accepted_fix_result", None)
                         st.session_state["uploaded_file_name"] = (
                             uploaded_file.name
                         )
@@ -739,6 +747,607 @@ elif page == "AI Code Review":
             with st.expander("View Complete API Response"):
 
                 st.json(result)
+
+elif page == "Proposed Fixes":
+
+    st.title("🛠️ Proposed Code Fixes")
+
+    st.write(
+        "Generate, inspect, and validate proposed code fixes "
+        "without modifying your original uploaded source."
+    )
+
+    st.divider()
+
+    upload_id = st.session_state.get("upload_id")
+
+    if not upload_id:
+
+        st.warning(
+            "No project uploaded. Please upload a Python project first."
+        )
+
+    else:
+
+        st.success("Project ready for proposed fixes.")
+
+        st.write(
+            "**Project:**",
+            st.session_state.get("uploaded_file_name", "Unknown"),
+        )
+
+        st.code(upload_id)
+
+        # Retrieve existing analysis results.
+
+        analysis = st.session_state.get("analysis_result")
+
+        if not analysis or analysis.get("upload_id") != upload_id:
+
+            st.info(
+                "Run code analysis first to identify issues "
+                "for which fixes can be proposed."
+            )
+
+            if st.button("🔍 Analyze Project", use_container_width=True):
+
+                with st.spinner("Analyzing project..."):
+
+                    try:
+
+                        response = requests.post(
+                            f"{API_URL}/api/v1/analyze/{upload_id}",
+                            timeout=60,
+                        )
+
+                        if response.status_code == 200:
+
+                            analysis = response.json()
+
+                            st.session_state["analysis_result"] = analysis
+
+                            st.success("Analysis completed!")
+
+                            st.rerun()
+
+                        else:
+
+                            st.error(
+                                f"Analysis failed: {response.text}"
+                            )
+
+                    except requests.RequestException as exc:
+
+                        st.error(f"Backend connection error: {exc}")
+
+        else:
+
+            issues = analysis.get("issues", [])
+
+            st.subheader("🔍 Detected Issues")
+
+            st.metric("Total Issues", len(issues))
+
+            if not issues:
+
+                st.success(
+                    "No issues detected. Your project looks clean!"
+                )
+
+            else:
+
+                # Build readable issue labels.
+
+                issue_options = {}
+
+                for index, issue in enumerate(issues):
+
+                    label = (
+                        f"{issue.get('rule_id', 'Unknown')} | "
+                        f"{issue.get('file_path', 'Unknown file')} | "
+                        f"Line {issue.get('line', '?')} | "
+                        f"{issue.get('severity', 'Unknown')}"
+                    )
+
+                    issue_options[label] = index
+
+                selected_label = st.selectbox(
+                    "Select an issue to generate a proposed fix",
+                    list(issue_options.keys()),
+                )
+
+                selected_issue = issues[
+                    issue_options[selected_label]
+                ]
+
+                with st.expander("Selected Issue Details"):
+
+                    st.write(
+                        "**Rule:**",
+                        selected_issue.get("rule_id"),
+                    )
+
+                    st.write(
+                        "**File:**",
+                        selected_issue.get("file_path"),
+                    )
+
+                    st.write(
+                        "**Line:**",
+                        selected_issue.get("line"),
+                    )
+
+                    st.write(
+                        "**Description:**",
+                        selected_issue.get("message"),
+                    )
+
+                    st.write(
+                        "**Suggested Fix:**",
+                        selected_issue.get("suggestion", "Not available"),
+                    )
+
+                st.divider()
+
+                if st.button(
+                    "✨ Generate Proposed Fix",
+                    use_container_width=True,
+                ):
+
+                    request_data = {
+                        "file_path": selected_issue["file_path"],
+                        "rule_id": selected_issue["rule_id"],
+                        "line": selected_issue["line"],
+                    }
+
+                    with st.spinner(
+                        "Generating and validating proposed fix..."
+                    ):
+
+                        try:
+
+                            response = requests.post(
+                                f"{API_URL}/api/v1/fix/{upload_id}",
+                                json=request_data,
+                                timeout=30,
+                            )
+
+                            if response.status_code == 200:
+
+                                fix_result = response.json()
+
+                                st.session_state["fix_result"] = fix_result
+                                st.session_state["fix_issue_key"] = (
+                                    selected_issue.get("file_path"),
+                                    selected_issue.get("rule_id"),
+                                    selected_issue.get("line"),
+                                )
+                                st.session_state["fix_issue_key"] = (
+                                    selected_issue.get("file_path"),
+                                    selected_issue.get("rule_id"),
+                                    selected_issue.get("line"),
+                                )
+
+                                st.success(
+                                    "Proposed fix generated successfully!"
+                                )
+
+                            else:
+
+                                try:
+                                    error = response.json()
+                                except ValueError:
+                                    error = response.text
+
+                                st.error(
+                                    f"Fix generation failed: {error}"
+                                )
+
+                        except requests.RequestException as exc:
+
+                            st.error(
+                                f"Backend connection error: {exc}"
+                            )
+
+                # Display only the proposal generated for the currently selected issue.
+                fix_result = st.session_state.get("fix_result")
+                current_issue_key = (
+                    selected_issue.get("file_path"),
+                    selected_issue.get("rule_id"),
+                    selected_issue.get("line"),
+                )
+                saved_issue_key = st.session_state.get("fix_issue_key")
+
+                if (
+                    fix_result
+                    and fix_result.get("upload_id") == upload_id
+                    and saved_issue_key == current_issue_key
+                ):
+
+                    st.divider()
+                    st.subheader("📊 Fix Generation Result")
+
+                    if fix_result.get("supported"):
+                        st.success(fix_result.get("message", ""))
+                    else:
+                        st.warning(fix_result.get("message", ""))
+
+                    validation_passed = fix_result.get("validation_passed")
+
+                    if validation_passed is True:
+                        st.success("✅ AST Validation Passed")
+                    elif validation_passed is False:
+                        st.error("❌ AST Validation Failed")
+                    else:
+                        st.info("AST validation was not performed.")
+
+                    st.caption(fix_result.get("validation_message") or "")
+
+                    original_code = fix_result.get("original_code")
+                    proposed_code = fix_result.get("proposed_code")
+
+                    if original_code is not None:
+                        st.subheader("🔄 Original vs Proposed Code")
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            st.markdown("### Original Code")
+                            st.code(original_code, language="python")
+
+                        with col2:
+                            st.markdown("### Proposed Code")
+                            if proposed_code is not None:
+                                st.code(proposed_code, language="python")
+                            else:
+                                st.info("No proposed code was generated.")
+
+                    diff = fix_result.get("diff")
+                    if diff:
+                        st.subheader("📝 Code Difference")
+                        st.code(diff, language="diff")
+
+                    st.divider()
+                    st.info(
+                        "Accepting saves a separate version under the accepted-fixes "
+                        "storage area. Your original uploaded source remains unchanged."
+                    )
+
+                    can_accept = (
+                        fix_result.get("supported") is True
+                        and validation_passed is True
+                        and isinstance(proposed_code, str)
+                    )
+
+                    if can_accept:
+                        if st.button(
+                            "✅ Accept & Save Fix",
+                            use_container_width=True,
+                            type="primary",
+                        ):
+                            accept_request = {
+                                "file_path": selected_issue["file_path"],
+                                "rule_id": selected_issue["rule_id"],
+                                "line": selected_issue["line"],
+                            }
+
+                            with st.spinner("Revalidating and saving accepted version..."):
+                                try:
+                                    accept_response = requests.post(
+                                        f"{API_URL}/api/v1/fix/{upload_id}/accept",
+                                        json=accept_request,
+                                        timeout=30,
+                                    )
+
+                                    if accept_response.status_code in (200, 201):
+                                        accepted_data = accept_response.json()
+                                        st.session_state["accepted_fix_result"] = {
+                                            "upload_id": upload_id,
+                                            "issue_key": current_issue_key,
+                                            "data": accepted_data,
+                                        }
+                                        st.success(
+                                            "Fix accepted and saved as a separate version."
+                                        )
+                                    else:
+                                        try:
+                                            accept_error = accept_response.json()
+                                        except ValueError:
+                                            accept_error = accept_response.text
+                                        st.error(
+                                            f"Unable to save accepted fix: {accept_error}"
+                                        )
+
+                                except requests.RequestException as exc:
+                                    st.error(f"Backend connection error: {exc}")
+
+                    else:
+                        st.warning(
+                            "This proposal cannot be accepted. A supported fix "
+                            "and successful AST validation are required."
+                        )
+
+                    accepted_state = st.session_state.get("accepted_fix_result")
+                    if (
+                        accepted_state
+                        and accepted_state.get("upload_id") == upload_id
+                        and accepted_state.get("issue_key") == current_issue_key
+                    ):
+                        accepted_data = accepted_state.get("data", {})
+                        accepted_fix_id = accepted_data.get("fix_id")
+                        if not accepted_fix_id:
+                            accepted_fix_id = accepted_data.get("id")
+                        if not accepted_fix_id and isinstance(
+                            accepted_data.get("fix"), dict
+                        ):
+                            accepted_fix_id = accepted_data["fix"].get("id")
+
+                        st.success("Saved accepted version successfully.")
+                        if accepted_fix_id:
+                            st.write("**Accepted Fix ID:**")
+                            st.code(accepted_fix_id)
+                        st.caption(
+                            "Open Accepted Fix History to inspect the saved version "
+                            "and verify its SHA-256 hash."
+                        )
+
+                    if st.button(
+                        "❌ Reject Proposal",
+                        use_container_width=True,
+                    ):
+                        st.session_state.pop("fix_result", None)
+                        st.session_state.pop("fix_issue_key", None)
+                        st.session_state.pop("accepted_fix_result", None)
+                        st.success("Proposal dismissed.")
+                        st.rerun()
+
+                elif fix_result and fix_result.get("upload_id") == upload_id:
+                    st.info(
+                        "The displayed proposal belongs to a different issue. "
+                        "Generate a new proposal for the currently selected issue."
+                    )
+
+elif page == "Accepted Fix History":
+
+    st.title("📚 Accepted Fix History")
+
+    st.write(
+        "Browse saved fix versions, inspect their metadata, "
+        "and verify the SHA-256 integrity of accepted code."
+    )
+
+    st.divider()
+
+    # Load projects so accepted fixes can be browsed for any upload.
+    projects_data, projects_error = get_api_data("/api/v1/projects/")
+
+    if projects_error:
+        st.error(f"Unable to load projects: {projects_error}")
+    else:
+        projects = projects_data.get("projects", [])
+
+        if not projects:
+            st.info("No uploaded projects are available yet.")
+        else:
+            project_options = {
+                (
+                    f"{project.get('original_filename', 'Project')} "
+                    f"({project.get('upload_id', '')[:8]})"
+                ): project.get("upload_id")
+                for project in projects
+            }
+
+            selected_project_label = st.selectbox(
+                "Select a project",
+                list(project_options.keys()),
+                key="accepted_fix_project",
+            )
+            selected_upload_id = project_options[selected_project_label]
+
+            st.caption(f"Upload ID: {selected_upload_id}")
+
+            history_data, history_error = get_api_data(
+                f"/api/v1/fix/{selected_upload_id}/accepted"
+            )
+
+            if history_error:
+                st.error(f"Unable to load accepted fixes: {history_error}")
+            else:
+                accepted_fixes = history_data.get("accepted_fixes", [])
+
+                st.metric(
+                    "Accepted Fix Versions",
+                    history_data.get("total", len(accepted_fixes)),
+                )
+
+                if not accepted_fixes:
+                    st.info(
+                        "No fixes have been accepted for this project yet. "
+                        "Generate a proposal and use the Accept action to save one."
+                    )
+                else:
+                    display_records = []
+
+                    for record in accepted_fixes:
+                        display_records.append(
+                            {
+                                "Fix ID": record.get("id", ""),
+                                "Rule": record.get("rule_id", ""),
+                                "File": record.get("file_path", ""),
+                                "Line": record.get("line", ""),
+                                "Accepted At": record.get("created_at", ""),
+                            }
+                        )
+
+                    st.dataframe(
+                        display_records,
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                    st.divider()
+                    st.subheader("🔍 Inspect Accepted Version")
+
+                    fix_options = {}
+
+                    for index, record in enumerate(accepted_fixes, start=1):
+                        fix_id = record.get("id")
+
+                        label = (
+                            f"{record.get('rule_id', 'Unknown rule')} | "
+                            f"{record.get('file_path', 'Unknown file')} | "
+                            f"Line {record.get('line', '?')} | "
+                            f"{record.get('created_at', 'Unknown date')} | "
+                            f"Version {index}"
+                        )
+
+                        if fix_id:
+                            fix_options[label] = fix_id
+
+                    if not fix_options:
+                        st.warning(
+                            "The API returned accepted-fix records without fix IDs."
+                        )
+                    else:
+                        selected_fix_label = st.selectbox(
+                            "Choose an accepted fix",
+                            list(fix_options.keys()),
+                            key=f"accepted_fix_record_{selected_upload_id}",
+                        )
+                        selected_fix_id = fix_options[selected_fix_label]
+
+                        if st.button(
+                            "📖 Load Accepted Code",
+                            use_container_width=True,
+                        ):
+                            with st.spinner("Loading and verifying accepted code..."):
+                                detail_data, detail_error = get_api_data(
+                                    f"/api/v1/fix/{selected_upload_id}/accepted/"
+                                    f"{selected_fix_id}"
+                                )
+
+                                if detail_error:
+                                    st.error(
+                                        f"Unable to retrieve accepted version: "
+                                        f"{detail_error}"
+                                    )
+                                    st.session_state.pop(
+                                        "accepted_fix_detail",
+                                        None,
+                                    )
+                                else:
+                                    st.session_state["accepted_fix_detail"] = {
+                                        "upload_id": selected_upload_id,
+                                        "fix_id": selected_fix_id,
+                                        "data": detail_data,
+                                    }
+
+                        detail_state = st.session_state.get(
+                            "accepted_fix_detail"
+                        )
+
+                        if (
+                            detail_state
+                            and detail_state.get("upload_id") == selected_upload_id
+                            and detail_state.get("fix_id") == selected_fix_id
+                        ):
+                            detail_data = detail_state.get("data", {})
+                            fix_record = detail_data.get("fix", {})
+                            accepted_code = detail_data.get("accepted_code")
+
+                            st.divider()
+                            st.subheader("🛡️ Integrity Verification")
+
+                            expected_hash = fix_record.get("accepted_sha256")
+
+                            if isinstance(accepted_code, str) and expected_hash:
+                                actual_hash = hashlib.sha256(
+                                    accepted_code.encode("utf-8")
+                                ).hexdigest()
+
+                                if actual_hash == expected_hash:
+                                    st.success(
+                                        "SHA-256 verification passed. "
+                                        "The retrieved code matches the saved hash."
+                                    )
+                                else:
+                                    st.error(
+                                        "SHA-256 verification failed. "
+                                        "The retrieved code does not match the "
+                                        "stored hash. Code preview is blocked."
+                                    )
+
+                                col1, col2 = st.columns(2)
+
+                                with col1:
+                                    st.caption("Stored accepted SHA-256")
+                                    st.code(expected_hash, language="text")
+
+                                with col2:
+                                    st.caption("Calculated SHA-256")
+                                    st.code(actual_hash, language="text")
+
+                                if actual_hash == expected_hash:
+                                    st.subheader("✅ Accepted Code")
+
+                                    st.code(
+                                        accepted_code,
+                                        language="python",
+                                    )
+
+                                    st.download_button(
+                                        label="⬇️ Download Verified Accepted Code",
+                                        data=accepted_code,
+                                        file_name="accepted.py",
+                                        mime="text/x-python",
+                                        use_container_width=True,
+                                    )
+                            else:
+                                st.error(
+                                    "Integrity verification could not be performed "
+                                    "because the accepted code or stored SHA-256 "
+                                    "value is missing. Code preview is blocked."
+                                )
+
+                            st.divider()
+                            st.subheader("📋 Fix Metadata")
+
+                            metadata_col1, metadata_col2 = st.columns(2)
+
+                            with metadata_col1:
+                                st.write(
+                                    "**Rule:**",
+                                    fix_record.get("rule_id", "N/A"),
+                                )
+                                st.write(
+                                    "**File:**",
+                                    fix_record.get("file_path", "N/A"),
+                                )
+                                st.write(
+                                    "**Line:**",
+                                    fix_record.get("line", "N/A"),
+                                )
+
+                            with metadata_col2:
+                                st.write(
+                                    "**Accepted At:**",
+                                    fix_record.get("created_at", "N/A"),
+                                )
+                                st.write(
+                                    "**Original SHA-256:**",
+                                    fix_record.get("original_sha256", "N/A"),
+                                )
+                                st.write(
+                                    "**Accepted SHA-256:**",
+                                    fix_record.get("accepted_sha256", "N/A"),
+                                )
+
+                            st.info(
+                                "The original uploaded source remains unchanged. "
+                                "This page displays the separately saved accepted "
+                                "version. The current API provides the original "
+                                "file hash, but not the original source text, so "
+                                "a side-by-side source comparison is not available."
+                            )
 
 elif page == "Test Generator":
 

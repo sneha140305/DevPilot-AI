@@ -90,6 +90,25 @@ def initialize_database(
 
             CREATE INDEX IF NOT EXISTS idx_test_generation_upload_id
                 ON test_generation_results(upload_id);
+
+            CREATE TABLE IF NOT EXISTS accepted_fixes (
+                id TEXT PRIMARY KEY,
+                upload_id TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                rule_id TEXT NOT NULL,
+                line INTEGER NOT NULL,
+                accepted_path TEXT NOT NULL,
+                original_sha256 TEXT NOT NULL,
+                accepted_sha256 TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                FOREIGN KEY (upload_id)
+                    REFERENCES projects(upload_id)
+                    ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_accepted_fixes_upload_id
+                ON accepted_fixes(upload_id);
             """
         )
 
