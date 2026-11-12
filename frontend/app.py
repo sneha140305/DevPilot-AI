@@ -618,11 +618,11 @@ elif page == "Code Analysis":
 
 elif page == "AI Code Review":
 
-    st.title("🤖 AI Code Review")
+    st.title("🤖 AI Code Review & Debugging")
 
     st.write(
-        "Understand detected code issues, their impact, "
-        "and recommended fixes."
+        "Understand code issues, investigate their root causes, "
+        "and follow practical debugging recommendations."
     )
 
     upload_id = st.session_state.get("upload_id")
@@ -635,7 +635,7 @@ elif page == "AI Code Review":
 
     else:
 
-        st.success("Project ready for code review.")
+        st.success("Project ready for intelligent code review.")
 
         st.write(
             "**Project:**",
@@ -643,11 +643,13 @@ elif page == "AI Code Review":
         )
 
         if st.button(
-            "🚀 Review My Code",
+            "🚀 Analyze & Debug My Code",
             use_container_width=True,
         ):
 
-            with st.spinner("Reviewing your code..."):
+            with st.spinner(
+                "Analyzing source code and investigating potential causes..."
+            ):
 
                 try:
 
@@ -662,7 +664,9 @@ elif page == "AI Code Review":
 
                         st.session_state["review_result"] = result
 
-                        st.success("Code review completed!")
+                        st.success(
+                            "Intelligent code review completed!"
+                        )
 
                     else:
 
@@ -714,12 +718,13 @@ elif page == "AI Code Review":
             col4.metric("Low", low_issues)
 
             st.caption(
-                f"Review provider: {result.get('review_provider', 'N/A')}"
+                f"Review provider: "
+                f"{result.get('review_provider', 'N/A')}"
             )
 
             st.divider()
 
-            st.subheader("🔎 Detailed Code Review")
+            st.subheader("🔍 Detailed Code Review")
 
             if reviews:
 
@@ -727,59 +732,178 @@ elif page == "AI Code Review":
 
                     severity = issue.get("severity", "Unknown")
 
+                    rule_id = issue.get("rule_id", "N/A")
+
                     with st.expander(
                         f"{index}. {issue.get('rule_name', 'Code Issue')} "
-                        f"— {severity.upper()}"
+                        f"— {severity.upper()}",
+                        expanded=(index == 1),
                     ):
 
-                        st.markdown(
-                            f"**Rule:** {issue.get('rule_id', 'N/A')}"
+                        # Issue information
+                        st.markdown("### 📌 Issue Information")
+
+                        info_col1, info_col2 = st.columns(2)
+
+                        with info_col1:
+
+                            st.markdown(
+                                f"**Rule:** `{rule_id}`"
+                            )
+
+                            st.markdown(
+                                f"**Category:** "
+                                f"{issue.get('category', 'N/A')}"
+                            )
+
+                        with info_col2:
+
+                            st.markdown(
+                                f"**File:** "
+                                f"`{issue.get('file_path', 'N/A')}`"
+                            )
+
+                            st.markdown(
+                                f"**Line:** {issue.get('line', 'N/A')}"
+                            )
+
+                        st.markdown("### 📝 Issue Description")
+
+                        st.write(
+                            issue.get("message", "No description available.")
                         )
-
-                        st.markdown(
-                            f"**Category:** {issue.get('category', 'N/A')}"
-                        )
-
-                        st.markdown(
-                            f"**File:** `{issue.get('file_path', 'N/A')}`"
-                        )
-
-                        st.markdown(
-                            f"**Line:** {issue.get('line', 'N/A')}"
-                        )
-
-                        st.markdown("### 📝 Description")
-
-                        st.write(issue.get("message", "N/A"))
 
                         st.markdown("### 💡 Explanation")
 
-                        st.write(issue.get("explanation", "N/A"))
+                        st.write(
+                            issue.get("explanation", "N/A")
+                        )
+
+                        # Root cause
+                        st.divider()
+
+                        st.markdown("### 🔍 Root Cause Analysis")
+
+                        st.info(
+                            issue.get(
+                                "root_cause",
+                                "Root cause information is unavailable.",
+                            )
+                        )
+
+                        # Source code context
+                        st.markdown("### 💻 Source Code Context")
+
+                        if issue.get("context_available"):
+
+                            st.code(
+                                issue.get("code_context", ""),
+                                language="python",
+                            )
+
+                            st.caption(
+                                "The arrow (>) identifies the reported "
+                                "issue line."
+                            )
+
+                        else:
+
+                            st.warning(
+                                "Source context is unavailable for this issue."
+                            )
+
+                        # Debugging steps
+                        st.divider()
+
+                        st.markdown("### 🛠️ Debugging Guide")
+
+                        debugging_steps = issue.get(
+                            "debugging_steps",
+                            [],
+                        )
+
+                        if debugging_steps:
+
+                            for step_number, step in enumerate(
+                                debugging_steps,
+                                start=1,
+                            ):
+
+                                st.markdown(
+                                    f"**Step {step_number}.** {step}"
+                                )
+
+                        else:
+
+                            st.write(
+                                "No debugging steps are available."
+                            )
+
+                        # Impact
+                        st.divider()
 
                         st.markdown("### ⚠️ Potential Impact")
 
-                        st.write(issue.get("impact", "N/A"))
+                        st.write(
+                            issue.get("impact", "N/A")
+                        )
 
+                        # Suggested fix
                         st.markdown("### 🔧 Suggested Fix")
 
-                        st.info(
-                            issue.get("fix_suggestion", "No suggestion available.")
+                        st.success(
+                            issue.get(
+                                "fix_suggestion",
+                                "No suggestion available.",
+                            )
                         )
 
-                        st.progress(
-                            float(issue.get("confidence", 0))
-                        )
+                        # Confidence
+                        st.divider()
 
-                        st.caption(
-                            f"Confidence: "
-                            f"{issue.get('confidence', 0) * 100:.1f}%"
-                        )
+                        st.markdown("### 🎯 Confidence Assessment")
+
+                        confidence_level = issue.get(
+                            "confidence_level",
+                            "low",
+                        ).capitalize()
+
+                        confidence_col1, confidence_col2 = st.columns(2)
+
+                        with confidence_col1:
+
+                            st.metric(
+                                "Analysis Confidence",
+                                confidence_level,
+                            )
+
+                        with confidence_col2:
+
+                            st.metric(
+                                "Original Issue Confidence",
+                                f"{issue.get('confidence', 0) * 100:.1f}%",
+                            )
+
+                        if not issue.get("context_available", False):
+
+                            st.caption(
+                                "Note: Source context was unavailable. "
+                                "Interpret the analysis accordingly."
+                            )
 
             else:
 
                 st.success(
                     "Excellent! No code issues were found."
                 )
+
+            st.divider()
+
+            st.caption(
+                "DevPilot AI uses offline, rule-based analysis. "
+                "Root-cause explanations are recommendations, "
+                "not proof of runtime behavior."
+            )
 
             with st.expander("View Complete API Response"):
 
