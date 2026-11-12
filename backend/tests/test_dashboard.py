@@ -40,6 +40,10 @@ def test_dashboard_summary_empty_database(
         "total_issues": 0,
         "total_tests_generated": 0,
         "total_code_reviews": 0,
+        "total_test_executions": 0,
+        "total_tests_passed": 0,
+        "total_tests_failed": 0,
+        "latest_execution_status": None,
     }
 
 

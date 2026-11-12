@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.api.routes import review, test_generation
+from app.api.routes import review, test_execution, test_generation
 from app.api.routes.analysis import router as analysis_router
 from app.api.routes.dashboard import router as dashboard_router
 from app.api.routes.fixes import router as fixes_router
@@ -67,6 +67,11 @@ app.include_router(
 
 app.include_router(
     test_generation.router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    test_execution.router,
     prefix="/api/v1",
 )
 

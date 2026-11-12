@@ -133,6 +133,7 @@ with st.sidebar:
             "Proposed Fixes",
             "Accepted Fix History",
             "Test Generator",
+            "Test Runner",
             "Reports",
         ],
     )
@@ -264,19 +265,53 @@ if page == "Dashboard":
                 unsafe_allow_html=True,
             )
 
-    else:
-        col1, col2, col3, col4 = st.columns(4)
+        st.write("")
+        execution_col1, execution_col2, execution_col3, execution_col4 = (
+            st.columns(4)
+        )
+        execution_metrics = [
+            (
+                execution_col1,
+                "Test Executions",
+                metrics.get("total_test_executions", 0),
+            ),
+            (
+                execution_col2,
+                "Tests Passed",
+                metrics.get("total_tests_passed", 0),
+            ),
+            (
+                execution_col3,
+                "Tests Failed",
+                metrics.get("total_tests_failed", 0),
+            ),
+            (
+                execution_col4,
+                "Latest Execution",
+                str(metrics.get("latest_execution_status") or "N/A").upper(),
+            ),
+        ]
 
-        for col, label in zip(
-            [col1, col2, col3, col4],
-            [
-                "Projects Analyzed",
-                "Issues Detected",
-                "Tests Generated",
-                "Code Reviews",
-            ],
-        ):
-            with col:
+        for column, label, value in execution_metrics:
+            with column:
+                st.metric(label, value)
+
+    else:
+        first_row = st.columns(4)
+        second_row = st.columns(4)
+        metric_labels = [
+            "Projects Analyzed",
+            "Issues Detected",
+            "Tests Generated",
+            "Code Reviews",
+            "Test Executions",
+            "Tests Passed",
+            "Tests Failed",
+            "Latest Execution",
+        ]
+
+        for column, label in zip(first_row + second_row, metric_labels):
+            with column:
                 st.metric(label, "N/A")
 
     # Quick actions
@@ -361,6 +396,8 @@ elif page == "Upload Project":
                         st.session_state.pop("analysis_result", None)
                         st.session_state.pop("review_result", None)
                         st.session_state.pop("test_generation_result", None)
+                        st.session_state.pop("test_execution_result", None)
+                        st.session_state.pop("test_execution_upload_id", None)
                         st.session_state.pop("fix_result", None)
                         st.session_state.pop("accepted_fix_result", None)
                         st.session_state["uploaded_file_name"] = (
@@ -1524,6 +1561,333 @@ elif page == "Test Generator":
                 st.json(result)
 
 
+
+
+elif page == "Test Runner":
+
+    st.title("▶️ Docker Test Runner")
+
+    st.write(
+        "Execute generated pytest tests inside an isolated Docker container "
+        "and inspect saved execution results."
+    )
+
+    st.divider()
+
+    # Load saved projects from the backend. This works even when Streamlit's
+    # session state has been reset.
+    projects_data, projects_error = get_api_data("/api/v1/projects/")
+
+    if projects_error:
+        st.error(f"Unable to load uploaded projects: {projects_error}")
+    else:
+        projects = projects_data.get("projects", [])
+
+        if not projects:
+            st.info("No uploaded projects found. Upload a Python file or ZIP project first.")
+        else:
+            project_options = {
+                (
+                    f"{project.get('original_filename', 'Project')} "
+                    f"({project.get('upload_id', '')[:8]})"
+                ): project.get("upload_id")
+                for project in projects
+                if project.get("upload_id")
+            }
+
+            if not project_options:
+                st.warning("The backend returned projects without valid upload IDs.")
+            else:
+                # Prefer the current project when it exists in the saved list.
+                current_upload_id = st.session_state.get("upload_id")
+                option_labels = list(project_options.keys())
+                default_index = 0
+
+                for index, label in enumerate(option_labels):
+                    if project_options[label] == current_upload_id:
+                        default_index = index
+                        break
+
+                selected_project_label = st.selectbox(
+                    "Select an uploaded project",
+                    option_labels,
+                    index=default_index,
+                    key="test_runner_project_selector",
+                )
+                upload_id = project_options[selected_project_label]
+
+                # Keep the selected project available to the other pages.
+                st.session_state["upload_id"] = upload_id
+                selected_project = next(
+                    (
+                        project for project in projects
+                        if project.get("upload_id") == upload_id
+                    ),
+                    {},
+                )
+                st.session_state["uploaded_file_name"] = selected_project.get(
+                    "original_filename",
+                    selected_project_label,
+                )
+
+                st.success(
+                    f"Selected project: "
+                    f"{selected_project.get('original_filename', selected_project_label)}"
+                )
+                st.caption(f"Upload ID: {upload_id}")
+
+                st.divider()
+
+                generation_data, generation_error = get_api_data(
+                    f"/api/v1/generate-tests/{upload_id}/latest"
+                )
+
+                if generation_error:
+                    st.warning(
+                        "No saved test-generation result was found for this project. "
+                        "Open Test Generator and generate tests first."
+                    )
+                    with st.expander("Generation lookup details"):
+                        st.write(generation_error)
+                else:
+                    generation_result = generation_data.get(
+                        "result",
+                        generation_data,
+                    )
+                    generated_count = generation_result.get("total_tests", 0)
+                    generation_success = generation_result.get("success", False)
+
+                    gen_col1, gen_col2 = st.columns(2)
+                    gen_col1.metric("Generated Tests", generated_count)
+                    gen_col2.metric(
+                        "Generation Status",
+                        "Ready"
+                        if generation_success and generated_count > 0
+                        else "Check",
+                    )
+
+                    if generated_count <= 0:
+                        st.warning(
+                            "The latest generation contains no tests. "
+                            "Generate supported tests before running the suite."
+                        )
+                    else:
+                        st.info(
+                            "Tests run in Docker with network access disabled, "
+                            "a read-only workspace, and resource limits."
+                        )
+
+                        if st.button(
+                            "🚀 Run Generated Tests",
+                            type="primary",
+                            use_container_width=True,
+                            key=f"run_generated_tests_{upload_id}",
+                        ):
+                            with st.spinner(
+                                "Running pytest inside the isolated Docker container..."
+                            ):
+                                try:
+                                    execution_response = requests.post(
+                                        f"{API_URL}/api/v1/execute-tests/{upload_id}",
+                                        timeout=45,
+                                    )
+
+                                    if execution_response.status_code == 200:
+                                        execution_result = execution_response.json()
+                                        st.session_state["test_execution_result"] = (
+                                            execution_result
+                                        )
+                                        st.session_state["test_execution_upload_id"] = (
+                                            upload_id
+                                        )
+                                        st.success("Test execution completed.")
+                                    else:
+                                        try:
+                                            execution_error = execution_response.json()
+                                        except ValueError:
+                                            execution_error = execution_response.text
+                                        st.error(
+                                            f"Test execution failed "
+                                            f"({execution_response.status_code}): "
+                                            f"{execution_error}"
+                                        )
+
+                                except requests.Timeout:
+                                    st.error(
+                                        "The request timed out. Check the backend "
+                                        "terminal and Docker container status."
+                                    )
+                                except requests.RequestException as exc:
+                                    st.error(f"Backend connection error: {exc}")
+
+                # Load the latest saved execution from the API. This restores
+                # results after a browser refresh or Streamlit restart.
+                latest_data, latest_error = get_api_data(
+                    f"/api/v1/execute-tests/{upload_id}/latest"
+                )
+
+                session_result = st.session_state.get("test_execution_result")
+                session_upload_id = st.session_state.get(
+                    "test_execution_upload_id"
+                )
+
+                if session_result and session_upload_id == upload_id:
+                    execution_result = session_result
+                elif not latest_error:
+                    execution_result = latest_data.get("result", latest_data)
+                else:
+                    execution_result = None
+
+                if execution_result:
+                    st.divider()
+                    st.subheader("📊 Latest Execution Results")
+
+                    execution_status = execution_result.get(
+                        "status",
+                        "unknown",
+                    ).lower()
+
+                    if execution_status == "passed":
+                        st.success("All generated tests passed.")
+                    elif execution_status == "failed":
+                        st.error("Some generated tests failed.")
+                    else:
+                        st.warning(
+                            f"Execution status: {execution_status.upper()}"
+                        )
+
+                    metric_columns = st.columns(5)
+                    metric_values = [
+                        ("Total", execution_result.get("tests_total", 0)),
+                        ("Passed", execution_result.get("passed", 0)),
+                        ("Failed", execution_result.get("failed", 0)),
+                        ("Skipped", execution_result.get("skipped", 0)),
+                        ("Errors", execution_result.get("errors", 0)),
+                    ]
+
+                    for column, (label, value) in zip(
+                        metric_columns,
+                        metric_values,
+                    ):
+                        column.metric(label, value)
+
+                    duration = execution_result.get("duration_seconds")
+                    result_col1, result_col2 = st.columns(2)
+                    result_col1.metric(
+                        "Execution Time",
+                        f"{duration:.2f} sec"
+                        if isinstance(duration, (int, float))
+                        else "N/A",
+                    )
+                    result_col2.metric(
+                        "Exit Code",
+                        execution_result.get("exit_code", "N/A"),
+                    )
+
+                    st.caption(
+                        f"Test file: {execution_result.get('test_file', 'N/A')}"
+                    )
+
+                    failure_details = execution_result.get("failure_details", [])
+                    if failure_details:
+                        st.subheader("❌ Failure Details")
+                        st.code("\n".join(failure_details), language="text")
+
+                    with st.expander("Standard Output", expanded=True):
+                        st.code(
+                            execution_result.get("stdout")
+                            or "(No standard output)",
+                            language="text",
+                        )
+
+                    with st.expander("Standard Error"):
+                        st.code(
+                            execution_result.get("stderr")
+                            or "(No standard error)",
+                            language="text",
+                        )
+
+                    with st.expander("Complete Execution Response"):
+                        st.json(execution_result)
+
+                st.divider()
+                st.subheader("🕘 Execution History")
+
+                history_data, history_error = get_api_data(
+                    f"/api/v1/execute-tests/{upload_id}/history"
+                )
+
+                if history_error:
+                    st.error(
+                        f"Unable to load execution history: {history_error}"
+                    )
+                else:
+                    executions = history_data.get("executions", [])
+                    st.metric(
+                        "Saved Executions",
+                        history_data.get(
+                            "total_executions",
+                            len(executions),
+                        ),
+                    )
+
+                    if not executions:
+                        st.info(
+                            "No test executions have been saved for this project yet."
+                        )
+                    else:
+                        history_rows = []
+
+                        for record in executions:
+                            saved_result = record.get("result", {})
+                            history_rows.append(
+                                {
+                                    "Execution ID": record.get("id", ""),
+                                    "Status": saved_result.get(
+                                        "status",
+                                        "unknown",
+                                    ).upper(),
+                                    "Total": saved_result.get("tests_total", 0),
+                                    "Passed": saved_result.get("passed", 0),
+                                    "Failed": saved_result.get("failed", 0),
+                                    "Duration (sec)": saved_result.get(
+                                        "duration_seconds"
+                                    ),
+                                    "Created At": record.get("created_at", ""),
+                                }
+                            )
+
+                        st.dataframe(
+                            history_rows,
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                        execution_options = {}
+                        for record in executions:
+                            record_id = record.get("id")
+                            if record_id is not None:
+                                saved_result = record.get("result", {})
+                                label = (
+                                    f"Run #{record_id} — "
+                                    f"{saved_result.get('status', 'unknown').upper()} — "
+                                    f"{record.get('created_at', 'Unknown date')}"
+                                )
+                                execution_options[label] = record
+
+                        if execution_options:
+                            selected_run_label = st.selectbox(
+                                "Inspect a saved execution",
+                                list(execution_options.keys()),
+                                key=f"inspect_execution_{upload_id}",
+                            )
+                            selected_record = execution_options[
+                                selected_run_label
+                            ]
+                            with st.expander("Saved execution details"):
+                                st.json(selected_record.get("result", {}))
+
+
 elif page == "Project History":
 
     st.title("📂 Project History")
@@ -1687,6 +2051,12 @@ elif page == "Project History":
                         f"{selected_upload_id}/history",
                         "history",
                     ),
+                    (
+                        "▶️ Test Execution",
+                        f"/api/v1/execute-tests/"
+                        f"{selected_upload_id}/history",
+                        "executions",
+                    ),
                 ]
 
                 for title, endpoint, result_key in history_endpoints:
@@ -1756,7 +2126,7 @@ elif page == "Reports":
 
     st.write(
         "View your project's code analysis, code review, "
-        "and automated test generation results."
+        "automated test generation, and test execution results."
     )
 
     upload_id = st.session_state.get("upload_id")
@@ -1800,6 +2170,30 @@ elif page == "Reports":
 
         if test_generation.get("upload_id") != upload_id:
             test_generation = {}
+
+        # Retrieve persisted test execution data, including after a Streamlit
+        # refresh or restart.
+        execution_latest_data, execution_latest_error = get_api_data(
+            f"/api/v1/execute-tests/{upload_id}/latest"
+        )
+        if execution_latest_error:
+            test_execution_latest = {}
+        else:
+            test_execution_latest = execution_latest_data.get(
+                "result",
+                execution_latest_data,
+            )
+
+        execution_history_data, execution_history_error = get_api_data(
+            f"/api/v1/execute-tests/{upload_id}/history"
+        )
+        if execution_history_error:
+            test_execution_history = []
+        else:
+            test_execution_history = execution_history_data.get(
+                "executions",
+                [],
+            )
 
         st.divider()
 
@@ -1928,6 +2322,78 @@ elif page == "Reports":
 
         st.divider()
 
+        # Test execution section
+
+        st.subheader("▶️ Automated Test Execution")
+
+        if test_execution_latest:
+            execution_status = str(
+                test_execution_latest.get("status", "unknown")
+            ).upper()
+            if execution_status == "PASSED":
+                st.success("Latest generated-test execution passed.")
+            elif execution_status == "FAILED":
+                st.error("Latest generated-test execution contains failures.")
+            else:
+                st.warning(f"Latest execution status: {execution_status}")
+
+            execution_columns = st.columns(5)
+            execution_values = [
+                ("Status", execution_status),
+                ("Total", test_execution_latest.get("tests_total", 0)),
+                ("Passed", test_execution_latest.get("passed", 0)),
+                ("Failed", test_execution_latest.get("failed", 0)),
+                ("Skipped", test_execution_latest.get("skipped", 0)),
+            ]
+            for column, (label, value) in zip(
+                execution_columns,
+                execution_values,
+            ):
+                column.metric(label, value)
+
+            duration = test_execution_latest.get("duration_seconds")
+            if isinstance(duration, (int, float)):
+                st.caption(f"Execution duration: {duration:.2f} seconds")
+
+            failure_details = test_execution_latest.get("failure_details", [])
+            if failure_details:
+                with st.expander("Latest execution failure details"):
+                    st.code("\\n".join(failure_details), language="text")
+        else:
+            st.info(
+                "No saved test execution is available for this project yet. "
+                "Run generated tests from the Test Runner page."
+            )
+
+        if test_execution_history:
+            with st.expander("View saved test execution history"):
+                execution_rows = []
+                for record in test_execution_history:
+                    saved_result = record.get("result", {})
+                    execution_rows.append(
+                        {
+                            "Execution ID": record.get("id", ""),
+                            "Status": str(
+                                saved_result.get("status", "unknown")
+                            ).upper(),
+                            "Total": saved_result.get("tests_total", 0),
+                            "Passed": saved_result.get("passed", 0),
+                            "Failed": saved_result.get("failed", 0),
+                            "Created At": record.get("created_at", ""),
+                        }
+                    )
+                st.dataframe(
+                    execution_rows,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+        elif execution_history_error:
+            st.warning(
+                f"Unable to load execution history: {execution_history_error}"
+            )
+
+        st.divider()
+
         # Export consolidated report
 
         st.subheader("📥 Export Project Report")
@@ -1941,6 +2407,8 @@ elif page == "Reports":
             "analysis": analysis,
             "code_review": review,
             "test_generation": test_generation,
+            "test_execution_latest": test_execution_latest,
+            "test_execution_history": test_execution_history,
         }
 
         report_json = json.dumps(

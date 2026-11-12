@@ -82,6 +82,20 @@ def initialize_database(
                     ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS test_execution_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                upload_id TEXT NOT NULL,
+                result_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                FOREIGN KEY (upload_id)
+                    REFERENCES projects(upload_id)
+                    ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_test_execution_upload_id
+                ON test_execution_results(upload_id);
+                
             CREATE INDEX IF NOT EXISTS idx_analysis_upload_id
                 ON analysis_results(upload_id);
 
