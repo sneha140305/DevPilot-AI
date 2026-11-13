@@ -56,6 +56,11 @@ def test_dashboard_summary_empty_database(
             "SEC004": 0,
             "SEC005": 0,
         },
+        "total_technical_debt_issues": 0,
+        "total_duplicate_blocks": 0,
+        "average_maintainability_index": None,
+        "average_cyclomatic_complexity": None,
+        "average_technical_debt_score": None,
     }
 
 

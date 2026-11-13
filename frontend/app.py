@@ -614,9 +614,102 @@ elif page == "Code Analysis":
                     "Files Analyzed",
                     result.get("total_files", "N/A"),
                 )
+            st.divider()
+                        # Technical Debt and Code Quality Report
+
+            technical_debt = result.get(
+                "technical_debt",
+                {},
+            )
 
             st.divider()
 
+            st.subheader("Code Quality & Technical Debt")
+
+            if technical_debt:
+
+                metric1, metric2, metric3, metric4 = st.columns(4)
+
+                with metric1:
+                    st.metric(
+                        "Maintainability Index",
+                        technical_debt.get(
+                            "average_maintainability_index",
+                            "N/A",
+                        ),
+                    )
+
+                with metric2:
+                    st.metric(
+                        "Average Complexity",
+                        technical_debt.get(
+                            "average_cyclomatic_complexity",
+                            "N/A",
+                        ),
+                    )
+
+                with metric3:
+                    st.metric(
+                        "Technical Debt Score",
+                        technical_debt.get(
+                            "technical_debt_score",
+                            "N/A",
+                        ),
+                    )
+
+                with metric4:
+                    st.metric(
+                        "Duplicate Blocks",
+                        technical_debt.get(
+                            "total_duplicate_blocks",
+                            0,
+                        ),
+                    )
+
+                st.caption(
+                    "Scores are heuristic indicators, not standardized "
+                    "industry measurements."
+                )
+
+                with st.expander("File-wise Quality Report"):
+
+                    quality_files = technical_debt.get(
+                        "files",
+                        [],
+                    )
+
+                    if quality_files:
+                        st.dataframe(
+                            quality_files,
+                            use_container_width=True,
+                        )
+                    else:
+                        st.info("No file-level quality data available.")
+
+                with st.expander("Potential Duplicate Code"):
+
+                    duplicate_blocks = technical_debt.get(
+                        "duplicate_blocks",
+                        [],
+                    )
+
+                    if duplicate_blocks:
+                        for index, block in enumerate(
+                            duplicate_blocks,
+                            start=1,
+                        ):
+                            st.write(f"**Duplicate Block {index}**")
+                            st.json(block)
+                    else:
+                        st.success(
+                            "No duplicate code blocks detected."
+                        )
+
+            else:
+                st.info(
+                    "Run a fresh analysis to generate the technical "
+                    "debt report."
+                )
             # Severity distribution
 
             severity_counts = result.get("severity_counts", {})

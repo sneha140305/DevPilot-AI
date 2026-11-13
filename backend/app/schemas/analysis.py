@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -39,3 +39,4 @@ class AnalysisResponse(BaseModel):
     quality_score: int
     files: list[FileAnalysis]
     issues: list[AnalysisIssue]
+    technical_debt: dict[str, Any] = {}

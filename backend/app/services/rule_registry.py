@@ -141,6 +141,38 @@ RULE_REGISTRY = {
             "hashing algorithm."
         ),
     },
+        "CQ001": {
+        "name": "High Cyclomatic Complexity",
+        "severity": "medium",
+        "category": "maintainability",
+        "confidence": 0.90,
+        "suggestion": (
+            "Reduce branching complexity by extracting smaller "
+            "functions and simplifying conditional logic."
+        ),
+    },
+
+    "CQ002": {
+        "name": "Long Function",
+        "severity": "low",
+        "category": "maintainability",
+        "confidence": 0.95,
+        "suggestion": (
+            "Split long functions into smaller functions "
+            "with clear responsibilities."
+        ),
+    },
+
+    "CQ003": {
+        "name": "Potential Duplicate Code",
+        "severity": "low",
+        "category": "maintainability",
+        "confidence": 0.75,
+        "suggestion": (
+            "Consider extracting repeated logic into a reusable "
+            "function or module."
+        ),
+    },
 }
 
 

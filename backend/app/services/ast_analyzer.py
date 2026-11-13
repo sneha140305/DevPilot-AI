@@ -10,6 +10,9 @@ from app.services.ruff_analyzer import (
     analyze_with_ruff,
 )
 from app.services.security_analyzer import analyze_security
+from app.services.technical_debt_analyzer import (
+    analyze_technical_debt,
+)
 
 
 class AnalysisError(Exception):
@@ -139,54 +142,101 @@ def discover_python_files(upload_id: str):
             "Invalid upload directory.",
         )
 
-    if not upload_directory.is_dir():
+    if not upload_directory.exists():
         raise AnalysisError(
             404,
             "UPLOAD_NOT_FOUND",
-            "The requested upload was not found.",
+            "The uploaded project could not be found.",
         )
 
-    # Individual Python file upload.
+    # Single Python file upload.
     single_file = upload_directory / "source.py"
 
     if single_file.is_file():
-        return [(single_file, "source.py")]
+        return [
+            (single_file, "source.py")
+        ]
 
     # ZIP project upload.
-    project_directory = upload_directory / "project"
+    project_directory = (
+        upload_directory / "project"
+    ).resolve()
 
-    if project_directory.is_dir():
-
-        python_files = []
-
-        for file_path in project_directory.rglob("*.py"):
-
-            if file_path.is_file():
-                relative_path = file_path.relative_to(
-                    project_directory
-                ).as_posix()
-
-                python_files.append(
-                    (file_path, relative_path)
-                )
-
-                if len(python_files) > settings.MAX_FILES_PER_PROJECT:
-                    raise AnalysisError(
-                        413,
-                        "TOO_MANY_FILES",
-                        "Project contains too many Python files.",
-                    )
-
-        return sorted(
-            python_files,
-            key=lambda item: item[1],
+    if not project_directory.is_relative_to(upload_directory):
+        raise AnalysisError(
+            400,
+            "INVALID_PROJECT_PATH",
+            "Invalid project directory.",
         )
 
-    raise AnalysisError(
-        404,
-        "PROJECT_NOT_FOUND",
-        "No Python project was found for this upload.",
+    if not project_directory.exists():
+        raise AnalysisError(
+            404,
+            "PROJECT_NOT_FOUND",
+            "The uploaded project directory could not be found.",
+        )
+
+    python_files = []
+
+    ignored_directories = {
+        ".git",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".pytest_cache",
+        ".ruff_cache",
+        "node_modules",
+        ".idea",
+        ".vscode",
+    }
+
+    try:
+        for file_path in project_directory.rglob("*.py"):
+
+            if any(
+                part in ignored_directories
+                for part in file_path.parts
+            ):
+                continue
+
+            resolved_file = file_path.resolve()
+
+            if not resolved_file.is_relative_to(project_directory):
+                continue
+
+            if not resolved_file.is_file():
+                continue
+
+            relative_path = resolved_file.relative_to(
+                project_directory
+            ).as_posix()
+
+            python_files.append((
+                resolved_file,
+                relative_path,
+            ))
+
+    except OSError as exc:
+        raise AnalysisError(
+            500,
+            "FILE_DISCOVERY_FAILED",
+            "Could not discover project Python files.",
+        ) from exc
+
+    python_files.sort(
+        key=lambda item: item[1]
     )
+
+    max_files = settings.MAX_FILES_PER_PROJECT
+
+    if len(python_files) > max_files:
+        raise AnalysisError(
+            413,
+            "TOO_MANY_FILES",
+            "Project exceeds the maximum file count.",
+        )
+
+    return python_files
 
 
 def analyze_python_file(
@@ -194,26 +244,46 @@ def analyze_python_file(
     relative_path: str,
 ):
     """
-    Parse and analyze a single Python file.
+    Analyze one Python file using AST.
+
+    Uploaded source code is parsed but never executed.
     """
 
-    max_size = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    try:
+        file_size = file_path.stat().st_size
 
-    file_size = file_path.stat().st_size
+    except OSError as exc:
+        raise AnalysisError(
+            500,
+            "FILE_ACCESS_FAILED",
+            f"Could not access {relative_path}.",
+        ) from exc
 
-    if file_size > max_size:
+    max_file_size = 5 * 1024 * 1024
+
+    if file_size > max_file_size:
         raise AnalysisError(
             413,
-            "SOURCE_FILE_TOO_LARGE",
-            f"{relative_path} exceeds the analysis size limit.",
+            "FILE_TOO_LARGE",
+            f"File {relative_path} exceeds the analysis size limit.",
         )
 
-    source_code = file_path.read_text(
-        encoding="utf-8",
-        errors="replace",
-    )
+    try:
+        source_code = file_path.read_text(
+            encoding="utf-8",
+            errors="replace",
+        )
 
-    lines_of_code = len(source_code.splitlines())
+    except OSError as exc:
+        raise AnalysisError(
+            500,
+            "FILE_READ_FAILED",
+            f"Could not read {relative_path}.",
+        ) from exc
+
+    lines_of_code = len(
+        source_code.splitlines()
+    )
 
     try:
         syntax_tree = ast.parse(
@@ -226,11 +296,15 @@ def analyze_python_file(
         issue = {
             "rule_id": "PY001",
             "severity": "high",
-            "message": f"Syntax error: {exc.msg}",
+            "message": (
+                f"Python syntax error: {exc.msg}"
+            ),
             "file_path": relative_path,
             "line": exc.lineno or 1,
-            "column": max((exc.offset or 1) - 1, 0),
-            "suggestion": "Correct the Python syntax and analyze again.",
+            "column": exc.offset or 0,
+            "suggestion": (
+                "Correct the Python syntax before running the program."
+            ),
         }
 
         return {
@@ -239,9 +313,12 @@ def analyze_python_file(
             "lines_of_code": lines_of_code,
             "issue_count": 1,
             "issues": [issue],
+            "source_code": source_code,
         }
 
-    analyzer = PythonCodeAnalyzer(relative_path)
+    analyzer = PythonCodeAnalyzer(
+        relative_path
+    )
 
     analyzer.visit(syntax_tree)
 
@@ -251,16 +328,26 @@ def analyze_python_file(
         "lines_of_code": lines_of_code,
         "issue_count": len(analyzer.issues),
         "issues": analyzer.issues,
+        "source_code": source_code,
     }
 
 
 def analyze_project(upload_id: str):
     """
-    Analyze uploaded files using AST and Ruff,
-    then classify all findings.
+    Analyze uploaded Python files using:
+
+    1. Python AST analysis
+    2. Ruff static analysis
+    3. Security analysis
+    4. Technical debt analysis
+    5. Centralized issue classification
+
+    Uploaded source code is never executed.
     """
 
-    python_files = discover_python_files(upload_id)
+    python_files = discover_python_files(
+        upload_id
+    )
 
     if not python_files:
         raise AnalysisError(
@@ -271,6 +358,11 @@ def analyze_project(upload_id: str):
 
     file_results = []
     all_issues = []
+    technical_debt_files = []
+
+    # --------------------------------------------------
+    # STEP 1: Analyze each Python file
+    # --------------------------------------------------
 
     for file_path, relative_path in python_files:
 
@@ -279,7 +371,24 @@ def analyze_project(upload_id: str):
             relative_path,
         )
 
-        combined_issues = list(result["issues"])
+        combined_issues = list(
+            result["issues"]
+        )
+
+        # --------------------------------------------------
+        # STEP 2: Collect source for technical debt analysis
+        # --------------------------------------------------
+
+        if result["status"] == "parsed":
+
+            technical_debt_files.append({
+                "file_path": relative_path,
+                "source_code": result["source_code"],
+            })
+
+        # --------------------------------------------------
+        # STEP 3: Ruff static analysis
+        # --------------------------------------------------
 
         if result["status"] == "parsed":
 
@@ -289,7 +398,9 @@ def analyze_project(upload_id: str):
                     relative_path,
                 )
 
-                combined_issues.extend(ruff_issues)
+                combined_issues.extend(
+                    ruff_issues
+                )
 
             except RuffAnalysisError as exc:
                 raise AnalysisError(
@@ -298,17 +409,32 @@ def analyze_project(upload_id: str):
                     str(exc),
                 ) from exc
 
-            source_code = file_path.read_text(
-                encoding="utf-8",
-                errors="replace",
-            )
+        # --------------------------------------------------
+        # STEP 4: Security analysis
+        # --------------------------------------------------
 
-            security_issues = analyze_security(
-                source_code,
-                relative_path,
-            )
+        if result["status"] == "parsed":
 
-            combined_issues.extend(security_issues)
+            try:
+                security_issues = analyze_security(
+                    result["source_code"],
+                    relative_path,
+                )
+
+                combined_issues.extend(
+                    security_issues
+                )
+
+            except Exception as exc:
+                raise AnalysisError(
+                    500,
+                    "SECURITY_ANALYSIS_FAILED",
+                    "Security analysis could not be completed.",
+                ) from exc
+
+        # --------------------------------------------------
+        # STEP 5: Save file-level findings
+        # --------------------------------------------------
 
         file_results.append({
             "file_path": relative_path,
@@ -316,14 +442,46 @@ def analyze_project(upload_id: str):
             "lines_of_code": result["lines_of_code"],
         })
 
-        all_issues.extend(combined_issues)
+        all_issues.extend(
+            combined_issues
+        )
 
-    # Centralized classification and deduplication.
-    classification = classify_issues(all_issues)
+    # --------------------------------------------------
+    # STEP 6: Technical debt analysis
+    # --------------------------------------------------
 
-    classified_issues = classification["issues"]
+    try:
+        technical_debt = analyze_technical_debt(
+            technical_debt_files
+        )
 
-    # Recalculate file-level issue counts after deduplication.
+    except Exception as exc:
+        raise AnalysisError(
+            500,
+            "TECHNICAL_DEBT_ANALYSIS_FAILED",
+            "Technical debt analysis could not be completed.",
+        ) from exc
+
+    all_issues.extend(
+        technical_debt["issues"]
+    )
+
+    # --------------------------------------------------
+    # STEP 7: Centralized classification and deduplication
+    # --------------------------------------------------
+
+    classification = classify_issues(
+        all_issues
+    )
+
+    classified_issues = classification[
+        "issues"
+    ]
+
+    # --------------------------------------------------
+    # STEP 8: Recalculate file-level issue counts
+    # --------------------------------------------------
+
     for file_result in file_results:
 
         file_result["issue_count"] = sum(
@@ -332,15 +490,30 @@ def analyze_project(upload_id: str):
             if issue["file_path"] == file_result["file_path"]
         )
 
+    # --------------------------------------------------
+    # STEP 9: Final analysis response
+    # --------------------------------------------------
+
     return {
         "success": True,
         "upload_id": upload_id,
+
         "total_files": len(python_files),
         "analyzed_files": len(file_results),
+
         "total_issues": classification["total_issues"],
+
         "severity_counts": classification["severity_counts"],
         "category_counts": classification["category_counts"],
+
         "quality_score": classification["quality_score"],
+
         "files": file_results,
         "issues": classified_issues,
+
+        "technical_debt": {
+            key: value
+            for key, value in technical_debt.items()
+            if key != "issues"
+        },
     }
