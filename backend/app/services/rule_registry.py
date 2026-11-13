@@ -91,6 +91,56 @@ RULE_REGISTRY = {
         "confidence": 0.95,
         "suggestion": "Rename or remove the duplicate definition.",
     },
+
+        "SEC001": {
+        "name": "Hardcoded Secret",
+        "severity": "high",
+        "category": "security",
+        "confidence": 0.90,
+        "suggestion": (
+            "Store credentials in environment variables "
+            "or a secure secrets manager."
+        ),
+    },
+    "SEC002": {
+        "name": "Potential SQL Injection",
+        "severity": "high",
+        "category": "security",
+        "confidence": 0.85,
+        "suggestion": (
+            "Use parameterized SQL queries instead of "
+            "dynamic string construction."
+        ),
+    },
+    "SEC003": {
+        "name": "Unsafe Shell Execution",
+        "severity": "high",
+        "category": "security",
+        "confidence": 0.95,
+        "suggestion": (
+            "Avoid shell=True and pass commands as "
+            "a list of arguments."
+        ),
+    },
+    "SEC004": {
+        "name": "Unsafe Deserialization",
+        "severity": "high",
+        "category": "security",
+        "confidence": 0.95,
+        "suggestion": (
+            "Avoid deserializing untrusted data with pickle."
+        ),
+    },
+    "SEC005": {
+        "name": "Weak Cryptographic Hash",
+        "severity": "medium",
+        "category": "security",
+        "confidence": 0.95,
+        "suggestion": (
+            "Use SHA-256 or a stronger cryptographic "
+            "hashing algorithm."
+        ),
+    },
 }
 
 

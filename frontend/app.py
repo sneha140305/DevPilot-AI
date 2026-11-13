@@ -296,6 +296,87 @@ if page == "Dashboard":
             with column:
                 st.metric(label, value)
 
+                # Security Overview
+
+        st.divider()
+
+        st.subheader("Security Overview")
+
+        security_score = metrics.get("security_score", 100)
+        total_security = metrics.get("total_security_issues", 0)
+
+        security_col1, security_col2, security_col3 = st.columns(3)
+
+        with security_col1:
+            st.metric(
+                "Security Score",
+                f"{security_score}/100",
+                help=(
+                    "Heuristic score based on detected security issues. "
+                    "This is not a formal security rating."
+                ),
+            )
+
+        with security_col2:
+            st.metric(
+                "Security Issues",
+                total_security,
+            )
+
+        with security_col3:
+            st.metric(
+                "High-Risk Issues",
+                metrics.get("high_risk_security_issues", 0),
+            )
+
+        risk_col1, risk_col2 = st.columns(2)
+
+        with risk_col1:
+            st.metric(
+                "Medium-Risk Issues",
+                metrics.get("medium_risk_security_issues", 0),
+            )
+
+        with risk_col2:
+            st.metric(
+                "Low-Risk Issues",
+                metrics.get("low_risk_security_issues", 0),
+            )
+
+        st.markdown("#### Vulnerability Breakdown")
+
+        security_rule_counts = metrics.get(
+            "security_rule_counts",
+            {},
+        )
+
+        rule_labels = {
+            "SEC001": "Hardcoded Secrets",
+            "SEC002": "Potential SQL Injection",
+            "SEC003": "Unsafe Shell Execution",
+            "SEC004": "Unsafe Deserialization",
+            "SEC005": "Weak Cryptographic Hash",
+        }
+
+        rule_columns = st.columns(5)
+
+        for column, (rule_id, label) in zip(
+            rule_columns,
+            rule_labels.items(),
+        ):
+            with column:
+                st.metric(
+                    rule_id,
+                    security_rule_counts.get(rule_id, 0),
+                    help=label,
+                )
+
+        st.caption(
+            "Security score is heuristic. Findings are based on "
+            "static AST pattern detection and may include false "
+            "positives or miss vulnerabilities."
+        )
+
     else:
         first_row = st.columns(4)
         second_row = st.columns(4)

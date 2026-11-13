@@ -9,6 +9,7 @@ from app.services.ruff_analyzer import (
     RuffAnalysisError,
     analyze_with_ruff,
 )
+from app.services.security_analyzer import analyze_security
 
 
 class AnalysisError(Exception):
@@ -296,6 +297,18 @@ def analyze_project(upload_id: str):
                     "RUFF_ANALYSIS_FAILED",
                     str(exc),
                 ) from exc
+
+            source_code = file_path.read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
+
+            security_issues = analyze_security(
+                source_code,
+                relative_path,
+            )
+
+            combined_issues.extend(security_issues)
 
         file_results.append({
             "file_path": relative_path,

@@ -248,3 +248,144 @@ def test_reject_missing_upload(client):
     )
 
     assert response.status_code == 404
+
+def test_detect_hardcoded_secret(client, tmp_path):
+
+    upload_id = "1" * 32
+
+    create_uploaded_project(
+        tmp_path,
+        upload_id,
+        {
+            "main.py": 'API_KEY = "sk_live_123456789"\n'
+        },
+    )
+
+    response = client.post(
+        f"/api/v1/analyze/{upload_id}"
+    )
+
+    assert response.status_code == 200
+
+    issues = response.json()["issues"]
+
+    assert any(
+        issue["rule_id"] == "SEC001"
+        and issue["category"] == "security"
+        and issue["severity"] == "high"
+        for issue in issues
+    )
+
+
+def test_detect_sql_injection(client, tmp_path):
+
+    upload_id = "2" * 32
+
+    create_uploaded_project(
+        tmp_path,
+        upload_id,
+        {
+            "main.py": (
+                'cursor.execute(f"SELECT * FROM users '
+                'WHERE id={user_id}")\n'
+            )
+        },
+    )
+
+    response = client.post(
+        f"/api/v1/analyze/{upload_id}"
+    )
+
+    assert response.status_code == 200
+
+    issues = response.json()["issues"]
+
+    assert any(
+        issue["rule_id"] == "SEC002"
+        for issue in issues
+    )
+
+
+def test_detect_unsafe_deserialization(client, tmp_path):
+
+    upload_id = "3" * 32
+
+    create_uploaded_project(
+        tmp_path,
+        upload_id,
+        {
+            "main.py": "pickle.loads(user_data)\n"
+        },
+    )
+
+    response = client.post(
+        f"/api/v1/analyze/{upload_id}"
+    )
+
+    assert response.status_code == 200
+
+    issues = response.json()["issues"]
+
+    assert any(
+        issue["rule_id"] == "SEC004"
+        for issue in issues
+    )
+
+def test_detect_unsafe_shell_execution(client, tmp_path):
+
+    upload_id = "4" * 32
+
+    create_uploaded_project(
+        tmp_path,
+        upload_id,
+        {
+            "main.py": (
+                "import subprocess\n"
+                "subprocess.run(command, shell=True)\n"
+            )
+        },
+    )
+
+    response = client.post(
+        f"/api/v1/analyze/{upload_id}"
+    )
+
+    assert response.status_code == 200
+
+    issues = response.json()["issues"]
+
+    assert any(
+        issue["rule_id"] == "SEC003"
+        and issue["category"] == "security"
+        for issue in issues
+    )
+
+
+def test_detect_weak_cryptographic_hash(client, tmp_path):
+
+    upload_id = "5" * 32
+
+    create_uploaded_project(
+        tmp_path,
+        upload_id,
+        {
+            "main.py": (
+                "import hashlib\n"
+                "hashlib.md5(data)\n"
+            )
+        },
+    )
+
+    response = client.post(
+        f"/api/v1/analyze/{upload_id}"
+    )
+
+    assert response.status_code == 200
+
+    issues = response.json()["issues"]
+
+    assert any(
+        issue["rule_id"] == "SEC005"
+        and issue["category"] == "security"
+        for issue in issues
+    )

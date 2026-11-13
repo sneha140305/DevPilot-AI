@@ -44,6 +44,18 @@ def test_dashboard_summary_empty_database(
         "total_tests_passed": 0,
         "total_tests_failed": 0,
         "latest_execution_status": None,
+        "total_security_issues": 0,
+        "high_risk_security_issues": 0,
+        "medium_risk_security_issues": 0,
+        "low_risk_security_issues": 0,
+        "security_score": 100,
+        "security_rule_counts": {
+            "SEC001": 0,
+            "SEC002": 0,
+            "SEC003": 0,
+            "SEC004": 0,
+            "SEC005": 0,
+        },
     }
 
 
@@ -143,3 +155,93 @@ def test_dashboard_summary_aggregates_records(
     assert summary["total_issues"] == 12
     assert summary["total_tests_generated"] == 8
     assert summary["total_code_reviews"] == 2
+
+def test_dashboard_security_metrics(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = setup_database(tmp_path, monkeypatch)
+
+    from app.db.database import get_connection
+
+    connection = get_connection(db_path)
+
+    analysis_result = {
+        "total_issues": 4,
+        "issues": [
+            {
+                "rule_id": "SEC001",
+                "category": "security",
+                "severity": "high",
+            },
+            {
+                "rule_id": "SEC002",
+                "category": "security",
+                "severity": "high",
+            },
+            {
+                "rule_id": "SEC003",
+                "category": "security",
+                "severity": "medium",
+            },
+            {
+                "rule_id": "SEC005",
+                "category": "security",
+                "severity": "low",
+            },
+        ],
+    }
+
+    import json
+
+    try:
+        connection.execute(
+            """
+            INSERT INTO projects (
+                upload_id,
+                original_filename,
+                upload_type
+            )
+            VALUES (?, ?, ?)
+            """,
+            ("d" * 32, "security_project.py", "python"),
+        )
+
+        connection.execute(
+            """
+            INSERT INTO analysis_results (
+                upload_id,
+                result_json
+            )
+            VALUES (?, ?)
+            """,
+            ("d" * 32, json.dumps(analysis_result)),
+        )
+
+        connection.commit()
+
+    finally:
+        connection.close()
+
+    client = TestClient(app)
+
+    response = client.get("/api/v1/dashboard/summary")
+
+    assert response.status_code == 200
+
+    summary = response.json()["summary"]
+
+    assert summary["total_security_issues"] == 4
+    assert summary["high_risk_security_issues"] == 2
+    assert summary["medium_risk_security_issues"] == 1
+    assert summary["low_risk_security_issues"] == 1
+
+    assert summary["security_rule_counts"] == {
+        "SEC001": 1,
+        "SEC002": 1,
+        "SEC003": 1,
+        "SEC004": 0,
+        "SEC005": 1,
+    }
+
+    assert summary["security_score"] == 61

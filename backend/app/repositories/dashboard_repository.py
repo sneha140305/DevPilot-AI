@@ -4,12 +4,29 @@ from typing import Any
 
 from app.db.database import DATABASE_PATH, get_connection
 
+SECURITY_RULES = (
+    "SEC001",
+    "SEC002",
+    "SEC003",
+    "SEC004",
+    "SEC005",
+)
+
+SEVERITY_WEIGHTS = {
+    "high": 15,
+    "medium": 7,
+    "low": 2,
+}
+
 
 def get_dashboard_summary(
     db_path: Path | None = None,
 ) -> dict[str, Any]:
     """
     Calculate dashboard metrics using saved SQLite records.
+
+    Security score is a heuristic based on saved security findings.
+    It is not a formal security rating.
     """
 
     if db_path is None:
@@ -34,21 +51,80 @@ def get_dashboard_summary(
         analyzed_project_ids = set()
         total_issues = 0
 
+        # Security metrics
+        total_security_issues = 0
+        high_risk_security_issues = 0
+        medium_risk_security_issues = 0
+        low_risk_security_issues = 0
+
+        security_rule_counts = {
+            rule_id: 0 for rule_id in SECURITY_RULES
+        }
+
         for row in analysis_rows:
             analyzed_project_ids.add(row["upload_id"])
 
             try:
-                result: dict[str, Any] = json.loads(
-                    row["result_json"]
-                )
+                result = json.loads(row["result_json"])
+
+                if not isinstance(result, dict):
+                    continue
 
                 issue_count = result.get("total_issues", 0)
 
                 if type(issue_count) is int and issue_count >= 0:
                     total_issues += issue_count
 
+                issues = result.get("issues", [])
+
+                if not isinstance(issues, list):
+                    continue
+
+                for issue in issues:
+                    if not isinstance(issue, dict):
+                        continue
+
+                    rule_id = issue.get("rule_id")
+                    category = issue.get("category")
+
+                    is_security_issue = (
+                        category == "security"
+                        or (
+                            isinstance(rule_id, str)
+                            and rule_id.startswith("SEC")
+                        )
+                    )
+
+                    if not is_security_issue:
+                        continue
+
+                    total_security_issues += 1
+
+                    if rule_id in security_rule_counts:
+                        security_rule_counts[rule_id] += 1
+
+                    severity = issue.get("severity")
+
+                    if severity == "high":
+                        high_risk_security_issues += 1
+
+                    elif severity == "medium":
+                        medium_risk_security_issues += 1
+
+                    elif severity == "low":
+                        low_risk_security_issues += 1
+
             except (json.JSONDecodeError, TypeError):
                 continue
+
+        # Calculate heuristic security score
+        security_penalty = (
+            high_risk_security_issues * SEVERITY_WEIGHTS["high"]
+            + medium_risk_security_issues * SEVERITY_WEIGHTS["medium"]
+            + low_risk_security_issues * SEVERITY_WEIGHTS["low"]
+        )
+
+        security_score = max(0, 100 - security_penalty)
 
         # Total generated tests
         test_rows = connection.execute(
@@ -63,6 +139,10 @@ def get_dashboard_summary(
         for row in test_rows:
             try:
                 result = json.loads(row["result_json"])
+
+                if not isinstance(result, dict):
+                    continue
+
                 test_count = result.get("total_tests", 0)
 
                 if type(test_count) is int and test_count >= 0:
@@ -95,6 +175,9 @@ def get_dashboard_summary(
             try:
                 result = json.loads(row["result_json"])
 
+                if not isinstance(result, dict):
+                    continue
+
                 passed = result.get("passed", 0)
                 failed = result.get("failed", 0)
 
@@ -125,10 +208,13 @@ def get_dashboard_summary(
                     latest_execution["result_json"]
                 )
 
-                status = latest_result.get("status")
+                if not isinstance(latest_result, dict):
+                    latest_execution_status = "unknown"
+                else:
+                    status = latest_result.get("status")
 
-                if isinstance(status, str):
-                    latest_execution_status = status
+                    if isinstance(status, str):
+                        latest_execution_status = status
 
             except (json.JSONDecodeError, TypeError):
                 latest_execution_status = "unknown"
@@ -143,6 +229,14 @@ def get_dashboard_summary(
             "total_tests_passed": total_tests_passed,
             "total_tests_failed": total_tests_failed,
             "latest_execution_status": latest_execution_status,
+
+            # Security dashboard metrics
+            "total_security_issues": total_security_issues,
+            "high_risk_security_issues": high_risk_security_issues,
+            "medium_risk_security_issues": medium_risk_security_issues,
+            "low_risk_security_issues": low_risk_security_issues,
+            "security_score": security_score,
+            "security_rule_counts": security_rule_counts,
         }
 
     finally:
