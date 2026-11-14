@@ -1,5 +1,4 @@
 import pytest
-
 from app.services.refactoring_advisor import (
     RefactoringError,
     build_refactoring_recommendation,

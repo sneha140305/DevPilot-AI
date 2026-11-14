@@ -10,6 +10,7 @@ ruff
 # Automated testing
 pytest
 httpx
+pytest-cov
 
 # Frontend and API communication
 streamlit

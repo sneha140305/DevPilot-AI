@@ -10,6 +10,10 @@ from app.repositories.accepted_fix_repository import (
     list_accepted_fixes,
 )
 from app.schemas.fixes import FixRequest, FixResponse
+from app.schemas.refactoring import (
+    RefactoringRequest,
+    RefactoringResponse,
+)
 from app.services.accepted_fix_service import accept_proposed_fix
 from app.services.ast_analyzer import (
     AnalysisError,
@@ -17,15 +21,11 @@ from app.services.ast_analyzer import (
     discover_python_files,
 )
 from app.services.fix_generator import generate_fix
-from app.schemas.refactoring import (
-    RefactoringRequest,
-    RefactoringResponse,
-)
-
 from app.services.refactoring_advisor import (
     RefactoringError,
     build_refactoring_recommendation,
 )
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(

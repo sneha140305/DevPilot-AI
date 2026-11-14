@@ -1,7 +1,5 @@
 import ast
-from pathlib import Path
 from typing import Any
-
 
 REFACTORING_GUIDES = {
     "CQ001": {

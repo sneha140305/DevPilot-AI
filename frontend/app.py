@@ -1,7 +1,7 @@
 import hashlib
 import json
+import os
 from datetime import datetime, timezone
-
 import requests
 import streamlit as st
 
@@ -14,54 +14,278 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-API_URL = "http://127.0.0.1:8000"
+API_URL = os.getenv(
+    "DEVPILOT_API_URL",
+    "http://127.0.0.1:8000"
+).rstrip("/")
 
-# ---------------- CUSTOM CSS ----------------
+# ---------------- CUSTOM UI THEME ----------------
 
 st.markdown(
     """
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+    :root {
+        --dp-bg: #080d18;
+        --dp-panel: #101a2b;
+        --dp-panel-2: #142139;
+        --dp-border: rgba(148, 163, 184, 0.16);
+        --dp-text: #edf3ff;
+        --dp-muted: #91a1bb;
+        --dp-blue: #69a7ff;
+        --dp-violet: #a78bfa;
+        --dp-green: #43d9a3;
+    }
+
+    html, body, [class*="css"] {
+        font-family: 'DM Sans', sans-serif;
+    }
+
     .stApp {
-        background-color: #0e1117;
+        background:
+            radial-gradient(ellipse at 12% 0%, rgba(59, 130, 246, .13), transparent 34%),
+            radial-gradient(ellipse at 88% 8%, rgba(139, 92, 246, .11), transparent 30%),
+            var(--dp-bg);
+        color: var(--dp-text);
+    }
+
+    [data-testid="stHeader"] {
+        background: rgba(8, 13, 24, .72);
+    }
+
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #101a2b 0%, #0b1322 100%);
+        border-right: 1px solid var(--dp-border);
+    }
+
+    [data-testid="stSidebar"] > div:first-child {
+        padding-top: 1.35rem;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+        color: var(--dp-muted);
+    }
+
+    [data-testid="stSidebar"] [role="radiogroup"] {
+        gap: .28rem;
+    }
+
+    [data-testid="stSidebar"] [role="radiogroup"] label {
+        border: 1px solid transparent;
+        border-radius: 10px;
+        padding: .48rem .65rem;
+        transition: all .18s ease;
+    }
+
+    [data-testid="stSidebar"] [role="radiogroup"] label:hover {
+        background: rgba(105, 167, 255, .09);
+        border-color: rgba(105, 167, 255, .18);
+    }
+
+    [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
+        background: linear-gradient(90deg, rgba(59, 130, 246, .22), rgba(139, 92, 246, .13));
+        border-color: rgba(105, 167, 255, .35);
+    }
+
+    h1, h2, h3 {
+        font-family: 'Space Grotesk', sans-serif !important;
+        letter-spacing: -.035em;
+        color: #f4f7ff;
+    }
+
+    h1 {
+        font-size: clamp(2rem, 3vw, 2.65rem) !important;
+        font-weight: 700 !important;
+    }
+
+    h2, h3 {
+        font-weight: 600 !important;
+    }
+
+    p, label, .stMarkdown {
+        color: #c4cee0;
     }
 
     .main-title {
-        font-size: 38px;
-        font-weight: 800;
-        color: #ffffff;
+        font-family: 'Space Grotesk', sans-serif;
+        font-size: clamp(2.1rem, 4vw, 3.15rem);
+        line-height: 1.08;
+        font-weight: 700;
+        letter-spacing: -.055em;
+        color: #f7f9ff;
+        margin-bottom: .55rem;
     }
 
     .subtitle {
-        color: #a0a0a0;
-        font-size: 16px;
+        color: var(--dp-muted);
+        font-size: 1.02rem;
+        line-height: 1.65;
+        max-width: 780px;
     }
 
     .metric-card {
-        background-color: #1c2333;
-        padding: 22px;
-        border-radius: 12px;
-        border: 1px solid #30394b;
+        background: linear-gradient(145deg, rgba(24, 39, 63, .96), rgba(14, 24, 41, .96));
+        padding: 1.25rem 1.35rem;
+        border-radius: 16px;
+        border: 1px solid var(--dp-border);
+        box-shadow: 0 12px 30px rgba(0, 0, 0, .16);
+        min-height: 112px;
     }
 
     .metric-label {
-        color: #a0a0a0;
-        font-size: 14px;
+        color: var(--dp-muted);
+        font-size: .82rem;
+        font-weight: 600;
+        letter-spacing: .025em;
     }
 
     .metric-value {
-        color: #ffffff;
-        font-size: 30px;
-        font-weight: bold;
+        color: #f7f9ff;
+        font-family: 'Space Grotesk', sans-serif;
+        font-size: 2rem;
+        font-weight: 700;
+        margin-top: .3rem;
+    }
+
+    [data-testid="stMetric"] {
+        background: linear-gradient(145deg, rgba(20, 33, 55, .92), rgba(13, 23, 39, .92));
+        border: 1px solid var(--dp-border);
+        border-radius: 14px;
+        padding: 14px 16px;
+        min-height: 94px;
+    }
+
+    [data-testid="stMetricLabel"] {
+        color: var(--dp-muted);
+        font-weight: 600;
+    }
+
+    [data-testid="stMetricValue"] {
+        color: #f4f7ff;
+        font-family: 'Space Grotesk', sans-serif;
+    }
+
+    [data-testid="stButton"] button,
+    [data-testid="stDownloadButton"] button {
+        border-radius: 10px;
+        border: 1px solid rgba(105, 167, 255, .34);
+        background: linear-gradient(110deg, #2563eb, #6d5ce8);
+        color: white;
+        font-weight: 650;
+        min-height: 2.7rem;
+        transition: transform .16s ease, box-shadow .16s ease, filter .16s ease;
+        box-shadow: 0 7px 18px rgba(37, 99, 235, .16);
+    }
+
+    [data-testid="stButton"] button:hover,
+    [data-testid="stDownloadButton"] button:hover {
+        border-color: rgba(167, 139, 250, .7);
+        filter: brightness(1.12);
+        transform: translateY(-1px);
+        box-shadow: 0 10px 24px rgba(37, 99, 235, .25);
+        color: white;
+    }
+
+    [data-testid="stTextInput"] input,
+    [data-testid="stSelectbox"] [data-baseweb="select"] > div,
+    [data-testid="stTextArea"] textarea {
+        background: #101b2d;
+        border-color: var(--dp-border);
+        border-radius: 10px;
+        color: var(--dp-text);
+    }
+
+    [data-testid="stFileUploader"] {
+        background: rgba(16, 27, 45, .72);
+        border: 1px dashed rgba(105, 167, 255, .42);
+        border-radius: 16px;
+        padding: .65rem;
+    }
+
+    [data-testid="stExpander"] {
+        background: rgba(16, 27, 45, .72);
+        border: 1px solid var(--dp-border);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    [data-testid="stDataFrame"], [data-testid="stTable"] {
+        border: 1px solid var(--dp-border);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    hr {
+        border-color: var(--dp-border);
+    }
+
+    [data-testid="stAlert"] {
+        border-radius: 12px;
+        border: 1px solid var(--dp-border);
+    }
+
+    code {
+        color: #b9d5ff !important;
+    }
+
+    .dp-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: .75rem 1rem;
+        margin: 0 0 1.4rem 0;
+        border: 1px solid var(--dp-border);
+        border-radius: 14px;
+        background: rgba(16, 26, 43, .72);
+        backdrop-filter: blur(14px);
+    }
+
+    .dp-topbar-label {
+        color: #f3f6ff;
+        font-weight: 700;
+        font-size: .95rem;
+    }
+
+    .dp-topbar-meta {
+        color: var(--dp-muted);
+        font-size: .8rem;
+    }
+
+    .dp-pill {
+        display: inline-block;
+        padding: .28rem .65rem;
+        border-radius: 999px;
+        background: rgba(67, 217, 163, .1);
+        color: #65e6b8;
+        border: 1px solid rgba(67, 217, 163, .24);
+        font-size: .76rem;
+        font-weight: 700;
     }
 
     .status-online {
-        color: #2ecc71;
+        color: var(--dp-green);
         font-weight: bold;
     }
 
     .status-offline {
-        color: #ff6b6b;
+        color: #ff8585;
         font-weight: bold;
+    }
+
+    #MainMenu, footer {
+        visibility: hidden;
+    }
+
+    @media (max-width: 700px) {
+        .dp-topbar {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+        .metric-card {
+            padding: 1rem;
+        }
     }
     </style>
     """,
@@ -116,10 +340,35 @@ def get_api_data(endpoint):
 # ---------------- SIDEBAR ----------------
 
 with st.sidebar:
-    st.title("🚀 DevPilot AI")
+    st.markdown(
+        """
+        <div style="
+            padding: 1rem .85rem 1.15rem;
+            border: 1px solid rgba(105,167,255,.24);
+            border-radius: 16px;
+            background: linear-gradient(135deg, rgba(37,99,235,.19), rgba(109,92,232,.12));
+            margin-bottom: 1rem;
+        ">
+            <div style="font-size:1.65rem; font-weight:800; letter-spacing:-.05em; color:#f5f8ff;">
+                🚀 DevPilot <span style="color:#8dbbff;">AI</span>
+            </div>
+            <div style="font-size:.78rem; color:#9eafc9; margin-top:.25rem;">
+                Your intelligent developer workspace
+            </div>
+            <div style="margin-top:.8rem;">
+                <span style="
+                    font-size:.68rem; font-weight:700; letter-spacing:.08em;
+                    color:#9fc4ff; background:rgba(105,167,255,.12);
+                    border:1px solid rgba(105,167,255,.2);
+                    border-radius:999px; padding:.22rem .55rem;
+                ">AI ENGINEERING TOOLKIT</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    st.caption("AI-Powered Developer Assistant")
-
+    st.caption("WORKSPACE")
     st.divider()
 
     page = st.radio(
@@ -143,6 +392,26 @@ with st.sidebar:
 
     st.caption("Version 1.0.0")
     st.caption("Built for developers ❤️")
+
+
+st.markdown(
+    f"""
+    <div class="dp-topbar">
+        <div>
+            <div class="dp-topbar-label">DevPilot AI <span style="color:#8dbbff;">/</span> {page}</div>
+            <div class="dp-topbar-meta">Static analysis · Security insights · Intelligent debugging</div>
+        </div>
+        <div>
+            <span class="dp-pill">● API ONLINE</span>
+        </div>
+    </div>
+    """.replace(
+        '<span class="dp-pill">● API ONLINE</span>',
+        '<span class="dp-pill">● API ONLINE</span>' if backend_online
+        else '<span class="dp-pill" style="background:rgba(255,133,133,.1);color:#ff9b9b;border-color:rgba(255,133,133,.25);">● API OFFLINE</span>'
+    ),
+    unsafe_allow_html=True,
+)
 
 
 # ---------------- DASHBOARD ----------------
@@ -995,7 +1264,7 @@ elif page == "Refactoring Advisor":
                         "code rewrite. Your original uploaded source "
                         "remains unchanged."
                     )
-                    
+
 elif page == "AI Code Review":
 
     st.title("🤖 AI Code Review & Debugging")
