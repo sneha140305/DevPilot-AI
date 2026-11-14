@@ -17,7 +17,15 @@ from app.services.ast_analyzer import (
     discover_python_files,
 )
 from app.services.fix_generator import generate_fix
+from app.schemas.refactoring import (
+    RefactoringRequest,
+    RefactoringResponse,
+)
 
+from app.services.refactoring_advisor import (
+    RefactoringError,
+    build_refactoring_recommendation,
+)
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
@@ -339,5 +347,133 @@ def get_accepted_fix_endpoint(
             detail={
                 "code": "ACCEPTED_FIX_RETRIEVAL_ERROR",
                 "message": "Could not retrieve the accepted fix.",
+            },
+        ) from exc
+
+@router.post(
+    "/{upload_id}/refactor",
+    response_model=RefactoringResponse,
+)
+def generate_refactoring_recommendation(
+    upload_id: str,
+    request: RefactoringRequest,
+):
+    """
+    Generate a safe refactoring recommendation.
+
+    This endpoint never modifies or executes uploaded source.
+    """
+
+    try:
+        validate_upload_id(upload_id)
+
+        if request.rule_id not in {
+            "CQ001",
+            "CQ002",
+            "CQ003",
+        }:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "UNSUPPORTED_REFACTORING_RULE",
+                    "message": (
+                        "Refactoring recommendations are "
+                        "not supported for this rule."
+                    ),
+                },
+            )
+
+        analysis = analyze_project(upload_id)
+
+        matching_issue = next(
+            (
+                issue
+                for issue in analysis["issues"]
+                if issue["file_path"] == request.file_path
+                and issue["rule_id"] == request.rule_id
+                and issue["line"] == request.line
+            ),
+            None,
+        )
+
+        if matching_issue is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "ISSUE_NOT_FOUND",
+                    "message": (
+                        "The requested issue was not found."
+                    ),
+                },
+            )
+
+        python_files = discover_python_files(upload_id)
+
+        matching_file = next(
+            (
+                path
+                for path, relative_path in python_files
+                if relative_path == request.file_path
+            ),
+            None,
+        )
+
+        if matching_file is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "SOURCE_FILE_NOT_FOUND",
+                    "message": "Source file was not found.",
+                },
+            )
+
+        source_code = matching_file.read_text(
+            encoding="utf-8",
+            errors="replace",
+        )
+
+        recommendation = build_refactoring_recommendation(
+            matching_issue,
+            source_code,
+        )
+
+        return {
+            "success": True,
+            "upload_id": upload_id,
+            "recommendation": recommendation,
+        }
+
+    except HTTPException:
+        raise
+
+    except AnalysisError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={
+                "code": exc.code,
+                "message": exc.message,
+            },
+        ) from exc
+
+    except RefactoringError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "REFACTORING_ERROR",
+                "message": str(exc),
+            },
+        ) from exc
+
+    except Exception as exc:
+        logger.exception(
+            "Refactoring recommendation failed for %s",
+            upload_id,
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "REFACTORING_ERROR",
+                "message": "Could not generate recommendation.",
             },
         ) from exc

@@ -131,6 +131,7 @@ with st.sidebar:
             "Code Analysis",
             "AI Code Review",
             "Proposed Fixes",
+            "Refactoring Advisor",
             "Accepted Fix History",
             "Test Generator",
             "Test Runner",
@@ -789,7 +790,212 @@ elif page == "Code Analysis":
             with st.expander("View complete API response"):
 
                 st.json(result)
+elif page == "Refactoring Advisor":
 
+    st.title("🧠 Intelligent Refactoring Advisor")
+
+    st.write(
+        "Get structured recommendations to simplify complex "
+        "functions, improve maintainability and reduce duplication."
+    )
+
+    st.divider()
+
+    upload_id = st.session_state.get("upload_id")
+
+    if not upload_id:
+        st.warning(
+            "Upload a Python project before using the Refactoring Advisor."
+        )
+
+    else:
+        analysis = st.session_state.get("analysis_result")
+
+        if (
+            not analysis
+            or analysis.get("upload_id") != upload_id
+        ):
+            st.info(
+                "Run Code Analysis first to identify refactoring opportunities."
+            )
+
+            if st.button(
+                "🔍 Analyze Project",
+                use_container_width=True,
+            ):
+                try:
+                    with st.spinner("Analyzing project..."):
+                        response = requests.post(
+                            f"{API_URL}/api/v1/analyze/{upload_id}",
+                            timeout=60,
+                        )
+
+                    if response.status_code == 200:
+                        st.session_state["analysis_result"] = (
+                            response.json()
+                        )
+                        st.rerun()
+                    else:
+                        st.error(response.text)
+
+                except requests.RequestException as exc:
+                    st.error(f"Backend connection error: {exc}")
+
+        else:
+            issues = [
+                issue
+                for issue in analysis.get("issues", [])
+                if issue.get("rule_id") in {
+                    "CQ001",
+                    "CQ002",
+                    "CQ003",
+                }
+            ]
+
+            st.metric(
+                "Refactoring Opportunities",
+                len(issues),
+            )
+
+            if not issues:
+                st.success(
+                    "No supported refactoring opportunities were detected."
+                )
+
+            else:
+                issue_options = {}
+
+                for index, issue in enumerate(issues):
+                    label = (
+                        f"{issue['rule_id']} | "
+                        f"{issue['file_path']} | "
+                        f"Line {issue['line']}"
+                    )
+                    issue_options[label] = index
+
+                selected_label = st.selectbox(
+                    "Select a refactoring opportunity",
+                    list(issue_options),
+                )
+
+                selected_issue = issues[
+                    issue_options[selected_label]
+                ]
+
+                with st.expander("Issue Details"):
+                    st.write(selected_issue.get("message"))
+                    st.write(
+                        "**File:**",
+                        selected_issue.get("file_path"),
+                    )
+                    st.write(
+                        "**Line:**",
+                        selected_issue.get("line"),
+                    )
+
+                if st.button(
+                    "✨ Generate Refactoring Plan",
+                    use_container_width=True,
+                    type="primary",
+                ):
+                    request_data = {
+                        "file_path": selected_issue["file_path"],
+                        "rule_id": selected_issue["rule_id"],
+                        "line": selected_issue["line"],
+                    }
+
+                    try:
+                        with st.spinner(
+                            "Preparing refactoring recommendations..."
+                        ):
+                            response = requests.post(
+                                f"{API_URL}/api/v1/fix/"
+                                f"{upload_id}/refactor",
+                                json=request_data,
+                                timeout=30,
+                            )
+
+                        if response.status_code == 200:
+                            st.session_state[
+                                "refactoring_result"
+                            ] = response.json()
+
+                            st.success(
+                                "Refactoring recommendation generated!"
+                            )
+                        else:
+                            st.error(response.text)
+
+                    except requests.RequestException as exc:
+                        st.error(
+                            f"Backend connection error: {exc}"
+                        )
+
+                result = st.session_state.get(
+                    "refactoring_result"
+                )
+
+                if (
+                    result
+                    and result.get("upload_id") == upload_id
+                ):
+                    recommendation = result.get(
+                        "recommendation",
+                        {},
+                    )
+
+                    st.divider()
+
+                    st.subheader(
+                        recommendation.get("title", "Refactoring Plan")
+                    )
+
+                    st.metric(
+                        "Priority",
+                        recommendation.get("priority", "N/A"),
+                    )
+
+                    st.write(
+                        recommendation.get("expected_benefit", "")
+                    )
+
+                    function = recommendation.get("function")
+
+                    if function:
+                        st.markdown("### Target Function")
+                        st.json(function)
+
+                    st.markdown("### Recommended Steps")
+
+                    for index, step in enumerate(
+                        recommendation.get("recommended_steps", []),
+                        start=1,
+                    ):
+                        st.write(f"{index}. {step}")
+
+                    context = recommendation.get(
+                        "source_context",
+                        {},
+                    )
+
+                    st.markdown("### Original Source Context")
+
+                    st.caption(
+                        f"Lines {context.get('start_line')}–"
+                        f"{context.get('end_line')}"
+                    )
+
+                    st.code(
+                        context.get("source", ""),
+                        language="python",
+                    )
+
+                    st.info(
+                        "This is a refactoring plan, not an automatic "
+                        "code rewrite. Your original uploaded source "
+                        "remains unchanged."
+                    )
+                    
 elif page == "AI Code Review":
 
     st.title("🤖 AI Code Review & Debugging")
