@@ -1,7 +1,7 @@
 # DevPilot AI
 
 ### AI-Powered Code Analysis, Debugging, and Testing Assistant
-
+[![DevPilot AI CI](https://github.com/sneha140305/DevPilot-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/sneha140305/DevPilot-AI/actions/workflows/ci.yml)
 DevPilot AI is a developer-assistance project designed to analyze Python code, identify potential issues, explain findings, generate candidate unit tests, and propose reviewable code fixes.
 
 The project combines deterministic static analysis with optional AI-assisted code review.
